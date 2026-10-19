@@ -52,7 +52,7 @@ test("reads live ESPN situations, including who has the ball and yards to the go
   const gb = games.find((g) => g.home === "GB");
   assert.equal(gb.state, "in");
   assert.equal(gb.offense, "GB");
-  assert.equal(gb.yardsToGoal, 2);
+  assert.equal(gb.yardsToGoal, 27); // "1st & 10 at DAL 27"
   assert.ok(gb.homeWinProb > 0.5);
   const sf = games.find((g) => g.home === "SF");
   assert.equal(sf.away, "WAS"); // ESPN says WSH, Sleeper says WAS
