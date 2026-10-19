@@ -7,6 +7,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeFetchJson } from "./net.js";
+import { fixtureLoader } from "./fixtures.js";
 import { syncEverything } from "./sync.js";
 import { rankGames, DIALS } from "./model.js";
 
@@ -20,7 +21,7 @@ if (!username) {
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const fetchJson = makeFetchJson({ fixturesDir: flag("--offline") ? path.join(here, "..", "fixtures") : null });
+const fetchJson = makeFetchJson(flag("--offline") ? { load: fixtureLoader(path.join(here, "..", "fixtures")) } : {});
 const pct = (x) => (x > 0.99 && x < 1 ? ">99%" : x < 0.01 && x > 0 ? "<1%" : `${Math.round(x * 100)}%`);
 const n1 = (x) => x.toFixed(1);
 

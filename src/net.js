@@ -1,33 +1,33 @@
-// One place where the engine talks to the internet.
-// Live mode uses fetch(); offline mode reads saved responses from fixtures/,
-// so the whole engine can be tested without a network connection.
-
-import { readFile } from "node:fs/promises";
-import path from "node:path";
+// One place where the engine talks to the internet. Works in Node and in the browser.
+// Live game data must never come from a stale cache, so each kind of URL has its own max age.
 
 export function fixtureName(url) {
   return url.replace(/^https?:\/\//, "").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "") + ".json";
 }
 
-export function makeFetchJson({ fixturesDir } = {}) {
+// How long a response stays fresh (ms).
+export function defaultMaxAge(url) {
+  if (url.includes("/scoreboard")) return 8_000; // live games
+  if (url.includes("/matchups/")) return 30_000; // fantasy points
+  if (url.includes("/projections/") || url.includes("/stats/")) return 6 * 3600_000;
+  return 3600_000; // users, leagues, rosters
+}
+
+// load(url) does the actual fetching: plain fetch() by default, or a fixtures reader in tests.
+// rewrite(url) lets the browser app send requests through its own server (no CORS issues).
+export function makeFetchJson({ load, rewrite = (u) => u, maxAge = defaultMaxAge } = {}) {
   const cache = new Map();
+  const loader = load ?? (async (url) => {
+    const res = await fetch(rewrite(url), { headers: { accept: "application/json" } });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`${res.status} from ${url}`);
+    return res.json();
+  });
   return async function fetchJson(url) {
-    if (cache.has(url)) return cache.get(url);
-    let data;
-    if (fixturesDir) {
-      const file = path.join(fixturesDir, fixtureName(url));
-      try {
-        data = JSON.parse(await readFile(file, "utf8"));
-      } catch {
-        throw new Error(`No saved data for ${url} (expected ${file})`);
-      }
-    } else {
-      const res = await fetch(url, { headers: { accept: "application/json" } });
-      if (res.status === 404) data = null;
-      else if (!res.ok) throw new Error(`${res.status} from ${url}`);
-      else data = await res.json();
-    }
-    cache.set(url, data);
+    const hit = cache.get(url);
+    if (hit && Date.now() - hit.at < maxAge(url)) return hit.data;
+    const data = await loader(url);
+    cache.set(url, { data, at: Date.now() });
     return data;
   };
 }

@@ -8,6 +8,7 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { makeFetchJson } from "../src/net.js";
+import { fixtureLoader } from "../src/fixtures.js";
 import { syncEverything } from "../src/sync.js";
 import { fantasyPoints, describeLeague } from "../src/scoring.js";
 import { parseScoreboard } from "../src/espn.js";
@@ -20,7 +21,7 @@ const LEAGUE = "1372713082211569664";
 // ---------- Real data ----------
 
 test("syncs a real Sleeper user end to end from just a username", async () => {
-  const data = await syncEverything(makeFetchJson({ fixturesDir: fixtures }), { username: "feiyingx", leagueIds: [LEAGUE] });
+  const data = await syncEverything(makeFetchJson({ load: fixtureLoader(fixtures) }), { username: "feiyingx", leagueIds: [LEAGUE] });
   assert.equal(data.week, 6);
   assert.equal(data.matchups.length, 1);
   const m = data.matchups[0];

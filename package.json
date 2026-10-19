@@ -4,7 +4,9 @@
   "description": "The brain of the app: syncs Sleeper leagues, reads live ESPN game data, and ranks which games to watch.",
   "type": "module",
   "scripts": {
-    "start": "node src/cli.js",
+    "start": "node server.js",
+    "cli": "node src/cli.js",
+    "demo": "node tools/make-demo.js",
     "test": "node --test test/*.test.js"
   },
   "license": "UNLICENSED",

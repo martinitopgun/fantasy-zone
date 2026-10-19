@@ -1,0 +1,171 @@
+<title>Fantasy Zone</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#0e1411">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: a night-game control room. Sticky scoreboard header, league win bars,
+   one big "focus" game with a live field + play feed, ranked games beside or below it. */
+:root {
+  --turf: #0e1411; --panel: #161f1a; --panel-2: #1c2721; --line: #2a372f;
+  --chalk: #e8eee9; --mute: #8d9c92; --field: #1d3527; --field-line: #2f4c3a;
+  --you: #f2c230; --you-ink: #1a1400; --opp: #ab8cf6; --up: #43d17e; --down: #f2645d;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --turf: #f2f5f1; --panel: #ffffff; --panel-2: #f7f9f6; --line: #d9e1da;
+  --chalk: #111a14; --mute: #56665b; --field: #d6e9da; --field-line: #b4d2bb;
+  --you: #a87b00; --you-ink: #fffbea; --opp: #6a4bd3; --up: #13894a; --down: #c7372f; color-scheme: light; } }
+:root[data-theme="light"] {
+  --turf: #f2f5f1; --panel: #ffffff; --panel-2: #f7f9f6; --line: #d9e1da;
+  --chalk: #111a14; --mute: #56665b; --field: #d6e9da; --field-line: #b4d2bb;
+  --you: #a87b00; --you-ink: #fffbea; --opp: #6a4bd3; --up: #13894a; --down: #c7372f; color-scheme: light; }
+
+html, body { min-height: 100%; }
+body { background: var(--turf); color: var(--chalk); font: 15px/1.45 var(--body); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--turf); }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--you); outline-offset: 2px; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 1200px; margin: 0 auto; }
+.num { font-variant-numeric: tabular-nums; }
+
+header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--turf); border-bottom: 1px solid var(--line); }
+header.top .wrap { display: flex; align-items: center; gap: 12px; padding-block: 10px; flex-wrap: wrap; }
+.brand { font: 700 22px/1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; }
+.brand b { color: var(--you); }
+.status { display: inline-flex; align-items: center; gap: 6px; font: 600 12px/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--mute); padding: 5px 8px; border: 1px solid var(--line); border-radius: 999px; }
+.status i { width: 7px; height: 7px; border-radius: 50%; background: var(--down); }
+.status.live i { animation: pulse 1.6s infinite; }
+@keyframes pulse { 50% { opacity: 0.25; } }
+.spacer { flex: 1; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { background: none; border: 0; padding: 6px 11px; font: 600 13px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute); }
+.seg button[aria-pressed="true"] { background: var(--panel-2); color: var(--chalk); }
+.toggle { display: inline-flex; align-items: center; gap: 8px; background: none; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font: 600 13px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; }
+.toggle .knob { width: 28px; height: 16px; border-radius: 999px; background: var(--line); position: relative; transition: background .2s; }
+.toggle .knob::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--chalk); transition: transform .2s; }
+.toggle[aria-pressed="true"] .knob { background: var(--you); }
+.toggle[aria-pressed="true"] .knob::after { transform: translateX(12px); background: var(--you-ink); }
+
+.note { margin-block: 12px 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; color: var(--mute); font-size: 13px; }
+
+.leagues { display: flex; gap: 10px; overflow-x: auto; padding-block: 12px; scrollbar-width: thin; }
+.league { flex: 1 0 260px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+.league .name { font: 600 13px/1.2 var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute); display: flex; justify-content: space-between; gap: 8px; }
+.league .score { display: flex; justify-content: space-between; align-items: baseline; font: 600 22px/1 var(--display); }
+.league .score small { font: 500 12px/1 var(--body); color: var(--mute); display: block; margin-top: 3px; }
+.wpbar { height: 6px; border-radius: 999px; background: var(--opp); overflow: hidden; }
+.wpbar span { display: block; height: 100%; background: var(--you); transition: width .6s; }
+.delta { font: 600 13px/1 var(--display); }
+.delta.up { color: var(--up); } .delta.down { color: var(--down); }
+
+main.board { display: grid; gap: 16px; padding-block: 4px 32px; }
+@media (min-width: 900px) { main.board.focus { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); align-items: start; } }
+
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
+.focus-card { padding: 16px; display: grid; gap: 14px; }
+.focus-card.hot { border-color: var(--you); }
+.eyebrow { font: 600 12px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--mute); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.eyebrow .ws { margin-left: auto; color: var(--chalk); }
+.pill { padding: 3px 7px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); }
+.pill.auto { color: var(--up); } .pill.pinned { color: var(--you); }
+
+.scoreline { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
+.team { display: grid; gap: 2px; }
+.team.home { text-align: right; }
+.team .abbr { font: 700 clamp(28px, 6vw, 44px)/1 var(--display); letter-spacing: 0.02em; display: inline-flex; gap: 8px; align-items: center; }
+.team.home .abbr { justify-content: flex-end; }
+.team .pts { font: 700 clamp(40px, 9vw, 64px)/0.9 var(--display); }
+.ballmark { width: 10px; height: 10px; border-radius: 50%; background: var(--you); display: inline-block; }
+.clock { text-align: center; font: 600 15px/1.2 var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute); }
+.clock b { display: block; font-size: 22px; color: var(--chalk); }
+.situation { font: 600 17px/1.2 var(--display); letter-spacing: 0.03em; text-align: center; }
+
+.field { width: 100%; height: auto; display: block; }
+.why { font-size: 14px; color: var(--mute); }
+.why strong { color: var(--chalk); font-weight: 600; }
+
+.stakes { display: grid; gap: 6px; }
+.stake { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 8px; background: var(--panel-2); border-left: 3px solid var(--line); }
+.stake.me { border-left-color: var(--you); } .stake.opponent { border-left-color: var(--opp); }
+.stake .pos { font: 700 12px/1 var(--display); letter-spacing: 0.06em; color: var(--mute); width: 28px; }
+.stake .who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stake .who small { color: var(--mute); }
+.stake .now { font: 600 18px/1 var(--display); }
+.stake .left { font-size: 12px; color: var(--mute); text-align: right; }
+.stake.flash { animation: flash 1.8s ease-out; }
+.stake.me.flash { --flash: var(--you); } .stake.opponent.flash { --flash: var(--opp); }
+@keyframes flash { 0% { background: color-mix(in srgb, var(--flash) 45%, var(--panel-2)); } 100% { background: var(--panel-2); } }
+
+.feed { display: grid; gap: 0; border-top: 1px solid var(--line); }
+.feed h3, .side h3 { font: 600 13px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--mute); margin: 12px 0 6px; }
+.play { padding: 8px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 10px; font-size: 14px; }
+.play .t { font: 600 13px/1.4 var(--display); color: var(--mute); }
+.play.big { color: var(--chalk); font-weight: 600; }
+.play.big .t { color: var(--down); }
+
+.side { display: grid; gap: 10px; min-width: 0; }
+.mini { padding: 12px; display: grid; gap: 8px; text-align: left; width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.mini:hover { border-color: var(--mute); }
+.mini.hot { border-color: var(--you); box-shadow: 0 0 0 1px var(--you) inset; }
+.mini .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.mini .teams { font: 700 20px/1 var(--display); letter-spacing: 0.02em; }
+.mini .meta { font: 600 12px/1.2 var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute); }
+.meter { height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.meter span { display: block; height: 100%; background: var(--you); }
+.mini .why { font-size: 13px; }
+.done { font-size: 13px; color: var(--mute); padding: 4px 2px; }
+
+main.board.grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+main.board.grid .focus-card { grid-column: 1 / -1; }
+
+.guys { width: 100%; border-collapse: collapse; font-size: 14px; }
+.guys-wrap { overflow-x: auto; }
+.guys th { text-align: left; font: 600 12px/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--mute); padding: 10px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.guys td { padding: 9px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.guys td.n { text-align: right; font: 600 16px/1 var(--display); }
+.guys tr.me td:first-child { box-shadow: inset 3px 0 var(--you); }
+.guys tr.opponent td:first-child { box-shadow: inset 3px 0 var(--opp); }
+.guys tr.flash td { animation: flash 1.8s ease-out; }
+.guys tr.me { --flash: var(--you); } .guys tr.opponent { --flash: var(--opp); }
+.tag { font: 700 11px/1 var(--display); letter-spacing: 0.08em; padding: 3px 6px; border-radius: 4px; background: var(--panel-2); color: var(--mute); }
+.tag.live { color: var(--down); }
+
+.toasts { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 64px); left: 0; right: 0; z-index: 20; display: grid; justify-items: center; gap: 8px; pointer-events: none; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.toast { pointer-events: auto; width: min(100%, 460px); background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--chalk); border-radius: 10px; padding: 10px 14px; box-shadow: 0 10px 30px rgb(0 0 0 / .35); display: grid; gap: 2px; text-align: left; animation: drop .35s ease-out; }
+.toast.me { border-left-color: var(--you); } .toast.opponent { border-left-color: var(--opp); }
+.toast.good { border-left-color: var(--up); } .toast.bad { border-left-color: var(--down); }
+.toast b { font: 700 16px/1.1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; }
+.toast span { font-size: 13px; color: var(--mute); }
+@keyframes drop { from { transform: translateY(-12px); opacity: 0; } }
+
+.setup { max-width: 420px; margin: 40px auto; padding: 20px; display: grid; gap: 12px; }
+.setup h1 { font: 700 30px/1 var(--display); text-transform: uppercase; margin: 0; text-wrap: balance; }
+.setup input { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--chalk); }
+.setup .go { background: var(--you); color: var(--you-ink); border: 0; border-radius: 8px; padding: 10px; font: 700 16px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; }
+.setup .err { color: var(--down); font-size: 13px; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<header class="top">
+  <div class="wrap">
+    <div class="brand">Fantasy <b>Zone</b></div>
+    <span class="status" id="status"><i></i><span>Loading</span></span>
+    <span class="spacer"></span>
+    <button class="toggle" id="fantasyToggle" aria-pressed="true" type="button"><span class="knob"></span>Fantasy</button>
+    <div class="seg" role="group" aria-label="View">
+      <button type="button" data-view="focus" aria-pressed="true">Focus</button>
+      <button type="button" data-view="grid" aria-pressed="false">Grid</button>
+      <button type="button" data-view="guys" aria-pressed="false">My Guys</button>
+    </div>
+  </div>
+</header>
+<div class="wrap" id="root">
+  <p class="note">Loading Sunday night, Week 6…</p>
+</div>
+<script type="module" src="app.js"></script>

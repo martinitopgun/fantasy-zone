@@ -200,10 +200,13 @@ export function detectBigPlays(before, after, { matchupsBefore = [], matchupsAft
     const text = g.lastPlay ?? "";
     const turnover = /intercept|fumble.*recover|safety/i.test(text) && text !== p.lastPlay;
     const longPlay = /\bfor (\d+) yards?\b/i.exec(text);
-    if (pts >= 6) pops.push({ game: g.name, kind: "touchdown", text });
-    else if (turnover) pops.push({ game: g.name, kind: "turnover", text });
-    else if (longPlay && Number(longPlay[1]) >= 40 && text !== p.lastPlay) pops.push({ game: g.name, kind: "big play", text });
-    else if (wpSwing >= 0.15) pops.push({ game: g.name, kind: "momentum swing", text });
+    if (pts >= 6) {
+      const team = g.homeScore > p.homeScore ? g.home : g.away;
+      pops.push({ game: g.name, gameId: g.id, team, kind: "touchdown", text: `${team} touchdown · ${g.away} ${g.awayScore}, ${g.home} ${g.homeScore}` });
+    }
+    else if (turnover) pops.push({ game: g.name, gameId: g.id, kind: "turnover", text });
+    else if (longPlay && Number(longPlay[1]) >= 40 && text !== p.lastPlay) pops.push({ game: g.name, gameId: g.id, kind: "big play", text });
+    else if (wpSwing >= 0.15) pops.push({ game: g.name, gameId: g.id, kind: "momentum swing", text });
   }
   // Fantasy pop-ups: any league where your win chance moved 5% or more.
   for (const m of matchupsAfter) {
