@@ -24,8 +24,11 @@ export function parseScoreboard(data) {
 
     // Who has the ball, and how far from the end zone they are.
     let offense = null, yardsToGoal = null;
-    if (sit.possession) {
-      offense = sit.possession === home.id ? home.team : away.team;
+    // Right after kickoffs and turnovers ESPN can leave out "possession"; the team that
+    // ended the last play with the ball has it.
+    const possession = sit.possession ?? sit.lastPlay?.end?.team?.id;
+    if (possession && st.type.state === "in") {
+      offense = possession === home.id ? home.team : away.team;
       const m = /^(\w+)\s+(\d+)$/.exec(sit.possessionText ?? "");
       if (m) {
         const side = code(m[1]);

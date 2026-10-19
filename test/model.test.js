@@ -51,7 +51,7 @@ test("reads live ESPN situations, including who has the ball and yards to the go
   const games = parseScoreboard(load("site_api_espn_com_apis_site_v2_sports_football_nfl_scoreboard.json"));
   const gb = games.find((g) => g.home === "GB");
   assert.equal(gb.state, "in");
-  assert.equal(gb.offense, "GB");
+  assert.equal(gb.offense, "DAL"); // possession comes from the last play right after a kickoff
   assert.equal(gb.yardsToGoal, 27); // "1st & 10 at DAL 27"
   assert.ok(gb.homeWinProb > 0.5);
   const sf = games.find((g) => g.home === "SF");
