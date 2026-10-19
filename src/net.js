@@ -7,7 +7,7 @@ export function fixtureName(url) {
 
 // How long a response stays fresh (ms).
 export function defaultMaxAge(url) {
-  if (url.includes("/scoreboard")) return 8_000; // live games
+  if (url.includes("/scoreboard") || url.includes("/summary")) return 8_000; // live games
   if (url.includes("/matchups/")) return 30_000; // fantasy points
   if (url.includes("/projections/") || url.includes("/stats/")) return 6 * 3600_000;
   return 3600_000; // users, leagues, rosters

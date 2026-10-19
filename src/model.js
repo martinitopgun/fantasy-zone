@@ -134,7 +134,7 @@ export function gameScore(game) {
   const bits = [];
   if (closeness > 0.6) bits.push("close game");
   if (time >= 2) bits.push("crunch time");
-  if (threat >= 1.6) bits.push(`${game.offense} threatening (${game.downText})`);
+  if (threat >= 1.6) bits.push(`${game.offense} threatening${game.downText ? ` (${game.downText})` : ""}`);
   if (favLosing) bits.push("upset alert");
   return { score, why: bits.join(", ") || null };
 }

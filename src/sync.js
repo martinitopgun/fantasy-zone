@@ -61,5 +61,5 @@ export async function syncEverything(fetchJson, { username, leagueIds = null, we
     });
   }
 
-  return { user, season, week, games, matchups, skipped, totalLeagues: allLeagues.length };
+  return { user, season, week, games, matchups, skipped, totalLeagues: allLeagues.length, projections };
 }

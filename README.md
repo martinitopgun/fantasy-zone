@@ -1,29 +1,37 @@
 # Fantasy Zone
 
-The "brain" of the app. From just a Sleeper username it automatically:
+A Real-style live play feed for NFL Sundays, ranked by your fantasy matchup.
 
-1. Finds every league, your team, and this week's opponent (Sleeper, free, no login)
-2. Detects each league's scoring rules (PPR / half / standard / custom / superflex / TE premium)
-3. Pulls projections + the last 5 weeks of real stats to build each player's Boom Rate, spread and red-zone share
-4. Reads every live NFL game from ESPN (score, clock, possession, down & distance, red zone, win probability, Vegas line)
-5. Computes live win chances and a Watch Score for every game, with a plain-English reason
+- **The Zone**: your matchup and live win chance, the 3 hottest games for you, and a feed of play cards
+  (newest on top). Filter: *My matchup* (plays that move your points or your opponent's), *All plays*, *Big plays*.
+- **Game screen**: score, field with the current drive, momentum (win chance after every play), your
+  players in that game, and its play-by-play. Back arrow (top left) to *All games*.
+- Nothing switches by itself. Hot games re-rank; you choose what to open.
 
-## Run the app
+## Run it
 
 ```
 npm start        # then open http://localhost:3000 (or http://<computer-ip>:3000 on your phone, same Wi-Fi)
 ```
 
-It asks for your Sleeper username once, then updates by itself every 10 seconds.
-Opened anywhere without the server, it replays real snapshots from Sunday night of Week 6 (`app/demo.json`, rebuilt with `npm run demo`).
+Live mode asks for your Sleeper username once. Every 10 seconds it reads ESPN's scoreboard and the full
+play-by-play of each live game. Fantasy points come from the plays under your league's own scoring rules.
 
-## Engine from the terminal
+Opened anywhere without the server (or with *Watch last Sunday's replay*), it replays every real play of
+Week 6 at the moment it happened, at 1×–20× speed, with ontopgun's real league.
+
+## Accuracy
+
+`npm run check` scores every player from ESPN's play-by-play and compares with Sleeper's official points:
+118 of 120 players in finished Week 6 games match exactly (the other two are within 0.12).
+
+## Other commands
 
 ```
-node src/cli.js <sleeper-username>                # live data (run on your own computer)
-node src/cli.js feiyingx --offline --players      # saved real data from Week 6, 2026
-node src/cli.js <username> --fantasy-off          # pure "RedZone" mode
-npm test
+npm test                       # 19 tests: scoring, play reading, replay, live mode, the ranking model
+npm run replay                 # rebuild app/replay.json from fixtures/week6
+node tools/save-week6.js DIR   # turn raw ESPN game summaries into fixtures/week6/game-*.json
+node src/cli.js <username>     # the ranking engine in a terminal
 ```
 
-No dependencies, no API keys, no cost. The model is documented at the top of `src/model.js`.
+No dependencies, no API keys, no cost.
