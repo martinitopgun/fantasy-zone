@@ -1,0 +1,12 @@
+{
+  "name": "fantasy-zone-engine",
+  "version": "0.1.0",
+  "description": "The brain of the app: syncs Sleeper leagues, reads live ESPN game data, and ranks which games to watch.",
+  "type": "module",
+  "scripts": {
+    "start": "node src/cli.js",
+    "test": "node --test test/*.test.js"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
