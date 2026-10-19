@@ -21,7 +21,7 @@ if (!username) {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fetchJson = makeFetchJson({ fixturesDir: flag("--offline") ? path.join(here, "..", "fixtures") : null });
-const pct = (x) => `${Math.round(x * 100)}%`;
+const pct = (x) => (x > 0.99 && x < 1 ? ">99%" : x < 0.01 && x > 0 ? "<1%" : `${Math.round(x * 100)}%`);
 const n1 = (x) => x.toFixed(1);
 
 const data = await syncEverything(fetchJson, { username, leagueIds: leagueIds.length ? leagueIds : null });
