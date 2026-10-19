@@ -108,7 +108,7 @@ export function roleFactor(p, game) {
 
 function liveSituation(game, involvedTeams) {
   if (!game || game.state === "post") return 0;
-  if (game.state === "pre") return 0.5; // upcoming: matters, but nothing to watch yet
+  if (game.state === "pre") return 0.2; // upcoming: matters, but nothing to watch yet
   let live = 1;
   if (game.offense && involvedTeams.has(game.offense)) {
     live += 0.5;

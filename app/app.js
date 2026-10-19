@@ -1,13 +1,16 @@
-// Fantasy Zone app. Two ways to run:
-//   live   when served by server.js (npm start): syncs Sleeper + ESPN every 10 seconds
-//   replay anywhere else: replays real snapshots saved from Sunday night, Week 6 (demo.json)
+// Fantasy Zone app. Three ways to run:
+//   live    when served by server.js (npm start): syncs Sleeper + ESPN every 10 seconds
+//   sim     a simulated Sunday: real Week 6 schedule, players and league, made-up plays (sim.js)
+//   replay  real snapshots saved from Sunday night, Week 6 (demo.json)
 
-import { rankGames, detectBigPlays, DIALS } from "./src/model.js";
+import { rankGames, detectBigPlays, gameScore, DIALS } from "./src/model.js";
 
 const POLL_MS = 10_000;
 const REPLAY_MS = 7_000;
 const SWITCH_RATIO = 1.3; // a game must score 30% higher to take the big screen
 const SWITCH_COOLDOWN_MS = 20_000;
+const SIM_TICK_MS = 1_500; // one play per game at 1x
+const TOAST_GAP_MS = 2_500; // at most one new pop-up this often
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -17,7 +20,9 @@ const store = {
 };
 
 const ui = {
-  mode: null, // "live" | "replay"
+  mode: null, // "live" | "sim" | "replay"
+  speed: store.get("speed", 3),
+  stop: null, // stops the current data source
   view: store.get("view", "focus"),
   fantasy: store.get("fantasy", true),
   username: store.get("username", null),
@@ -50,7 +55,49 @@ async function startLive() {
     }
   };
   await tick();
-  setInterval(tick, POLL_MS);
+  const timer = setInterval(tick, POLL_MS);
+  ui.stop = () => clearInterval(timer);
+}
+
+async function startSim() {
+  const [{ createSim }, slate] = await Promise.all([import("./sim.js"), fetch("slate.json").then((r) => r.json())]);
+  let sim, timer;
+  const run = () => {
+    clearInterval(timer);
+    if (sim.done) return;
+    timer = setInterval(() => {
+      ingest({ ...sim.step(), week: 6, user: "ontopgun" });
+      if (sim.done) { clearInterval(timer); render(); }
+    }, SIM_TICK_MS / ui.speed);
+  };
+  ui.restartSim = () => {
+    resetView();
+    sim = createSim(slate);
+    ingest({ ...sim.snapshot(), week: 6, user: "ontopgun" });
+    run();
+  };
+  ui.setSpeed = (x) => { ui.speed = x; store.set("speed", x); run(); render(); };
+  ui.simDone = () => sim?.done;
+  ui.stop = () => clearInterval(timer);
+  ui.restartSim();
+}
+
+function resetView() {
+  ui.data = null; ui.prev = null; ui.feeds.clear(); ui.focusId = null; ui.pinned = null; ui.lastSwitch = 0;
+  toastQueue.length = 0;
+  $("#toasts").replaceChildren();
+}
+
+function switchMode(mode) {
+  ui.stop?.();
+  ui.stop = null;
+  ui.mode = mode;
+  ui.error = null;
+  resetView();
+  render();
+  if (mode === "sim") startSim();
+  else if (mode === "replay") startReplay();
+  else if (ui.username) startLive();
 }
 
 async function startReplay() {
@@ -67,10 +114,12 @@ async function startReplay() {
   };
   ui.restartReplay = () => {
     clearInterval(timer);
-    i = 0; ui.data = null; ui.prev = null; ui.feeds.clear(); ui.focusId = null; ui.pinned = null;
+    i = 0;
+    resetView();
     next();
     timer = setInterval(next, REPLAY_MS);
   };
+  ui.stop = () => clearInterval(timer);
   ui.restartReplay();
 }
 
@@ -101,30 +150,50 @@ function ingest(d) {
     for (const m of d.matchups) for (const p of [...m.mine, ...m.theirs]) if (p.current > (was.get(`${p.owner}:${p.id}`) ?? p.current)) ui.flashes.add(`${p.owner}:${p.id}`);
   }
 
-  // Pop-ups for big plays anywhere, and for fantasy swings.
-  if (before) {
-    const pops = detectBigPlays(before.games, d.games, { matchupsBefore: before.matchups, matchupsAfter: d.matchups });
-    for (const p of pops) toast(p, d);
-  }
   chooseFocus();
+  // Pop-ups: fantasy swings, plays by your or your opponent's players, and touchdowns/turnovers
+  // in close games. Never for the game already on the big screen.
+  if (before) {
+    const starters = d.matchups.flatMap((m) => [...m.mine, ...m.theirs]);
+    for (const p of detectBigPlays(before.games, d.games, { matchupsBefore: before.matchups, matchupsAfter: d.matchups })) {
+      if (p.kind === "fantasy") { if (ui.fantasy) queueToast(p); continue; }
+      if (p.gameId === ui.focusId) continue;
+      const g = d.games.find((x) => x.id === p.gameId);
+      const play = g?.lastPlay ?? "";
+      const who = ui.fantasy && play ? starters.find((x) => x.pos !== "DEF" && play.includes(shortName(x))) : null;
+      const close = g && gameScore({ ...g, state: "in" }).score >= 35;
+      if (who) queueToast({ ...p, who, play });
+      else if (close && (p.kind === "touchdown" || p.kind === "turnover")) queueToast({ ...p, play });
+    }
+  }
   render();
 }
+
+// "Jayden Daniels" -> "J.Daniels", the way play-by-play names players.
+const shortName = (p) => p.short ?? (p.name.includes(" ") ? `${p.name[0]}.${p.name.split(" ").slice(1).join(" ")}` : p.name);
 
 function ranked() {
   if (!ui.data) return [];
   return rankGames({ games: ui.data.games, matchups: ui.data.matchups, dials: ui.fantasy ? DIALS.fantasyOn : DIALS.fantasyOff });
 }
 
+// Games you can follow right now come first; games that haven't started wait their turn.
+function watchable() {
+  const r = ranked();
+  return [...r.filter((x) => x.game.state === "in"), ...r.filter((x) => x.game.state === "pre")];
+}
+
 function chooseFocus() {
-  const r = ranked().filter((x) => x.game.state !== "post");
+  const r = watchable();
   if (!r.length) { ui.focusId = null; return; }
   if (ui.pinned && r.some((x) => x.game.id === ui.pinned)) { ui.focusId = ui.pinned; return; }
   ui.pinned = null;
   const current = r.find((x) => x.game.id === ui.focusId);
   const best = r[0];
-  const cooled = Date.now() - ui.lastSwitch > SWITCH_COOLDOWN_MS;
-  if (!current || (best.game.id !== current.game.id && best.watch > current.watch * SWITCH_RATIO && cooled)) {
-    if (current) toast({ kind: "switch", text: `${best.game.name}: ${best.reason}` }, ui.data);
+  const cooled = Date.now() - ui.lastSwitch > SWITCH_COOLDOWN_MS / (ui.mode === "sim" ? ui.speed : 1);
+  const kickedOff = current?.game.state === "pre" && best.game.state === "in";
+  if (!current || kickedOff || (best.game.id !== current.game.id && best.watch > current.watch * SWITCH_RATIO && cooled)) {
+    if (current) queueToast({ kind: "switch", gameId: best.game.id, text: `${best.game.name}: ${best.reason}` });
     ui.focusId = best.game.id;
     ui.lastSwitch = Date.now();
   }
@@ -132,7 +201,21 @@ function chooseFocus() {
 
 // ---------- Pop-ups ----------
 
+const toastQueue = [];
+let lastToastAt = 0;
+function queueToast(pop) {
+  toastQueue.push(pop);
+  if (toastQueue.length > 3) toastQueue.shift(); // keep only the newest few
+}
+setInterval(() => {
+  const gap = TOAST_GAP_MS / (ui.mode === "sim" ? Math.min(ui.speed, 3) : 1);
+  if (!toastQueue.length || Date.now() - lastToastAt < gap) return;
+  lastToastAt = Date.now();
+  toast(toastQueue.shift(), ui.data);
+}, 250);
+
 function toast(pop, d) {
+  if (!d) return;
   const el = document.createElement("button");
   el.type = "button";
   let title, body = pop.text ?? "", tone = "";
@@ -146,10 +229,13 @@ function toast(pop, d) {
   } else {
     title = { touchdown: "Touchdown", turnover: "Turnover", "big play": "Big play", "momentum swing": "Momentum swing" }[pop.kind] ?? pop.kind;
     title += ` · ${pop.game}`;
-    // Color it by whose fantasy player is on the scoring team.
-    const players = d.matchups.flatMap((m) => [...m.mine, ...m.theirs]).filter((p) => p.nflTeam === pop.team && p.remaining > 0);
-    if (players.some((p) => p.owner === "me")) tone = "me";
-    else if (players.some((p) => p.owner === "opponent")) tone = "opponent";
+    if (pop.who) {
+      // A fantasy starter made the play: yellow for yours, purple for your opponent's.
+      tone = pop.who.owner === "me" ? "me" : "opponent";
+      body = `${pop.who.owner === "me" ? "Your" : "Opponent's"} ${pop.who.pos} · ${pop.play}`;
+    } else if (pop.play && pop.kind !== "touchdown") {
+      body = pop.play;
+    }
   }
   if (!ui.fantasy && (pop.kind === "fantasy")) return;
   el.className = `toast ${tone}`;
@@ -157,7 +243,7 @@ function toast(pop, d) {
   el.addEventListener("click", () => { if (pop.gameId) { ui.pinned = pop.gameId; ui.focusId = pop.gameId; render(); } el.remove(); });
   $("#toasts").prepend(el);
   setTimeout(() => el.remove(), 6000);
-  while ($("#toasts").children.length > 3) $("#toasts").lastChild.remove();
+  while ($("#toasts").children.length > 2) $("#toasts").lastChild.remove();
 }
 
 // ---------- Rendering ----------
@@ -175,16 +261,29 @@ function render() {
     return;
   }
   const r = ranked();
-  const note = ui.mode === "replay"
+  const note = ui.mode === "sim" ? simNote() : ui.mode === "replay"
     ? `<p class="note"><b style="color:var(--chalk)">Replay, not live.</b> Three real moments saved from Sunday night, Week 6 (DAL @ GB, 2nd quarter) in ${esc(ui.data.user)}'s league, shown in order${ui.replay?.done ? ". Replay finished." : ` (moment ${ui.replay?.step} of ${ui.replay?.steps})…`} This preview can't connect to live games; run the app on a computer (npm start) for that.
-        ${ui.replay?.done ? `<button class="pill" type="button" data-replay>Watch the replay again</button>` : ""}</p>`
-    : ui.error ? `<p class="note">Last update failed (${esc(ui.error)}). Retrying in ${POLL_MS / 1000}s.</p>` : "";
+        ${ui.replay?.done ? `<button class="pill" type="button" data-replay>Watch the replay again</button>` : ""}
+        <button class="pill" type="button" data-mode="sim">Simulated Sunday</button></p>`
+    : `<p class="note">${ui.error ? `Last update failed (${esc(ui.error)}). Retrying in ${POLL_MS / 1000}s. ` : ""}<button class="pill" type="button" data-mode="sim">Try the demo Sunday</button></p>`;
   root.innerHTML = note + renderLeagues() + (ui.view === "guys" ? renderGuys() : renderBoard(r));
   root.querySelectorAll("[data-game]").forEach((b) => b.addEventListener("click", () => {
     ui.pinned = b.dataset.game; ui.focusId = b.dataset.game; render();
   }));
   root.querySelector("[data-replay]")?.addEventListener("click", () => ui.restartReplay());
+  root.querySelector("[data-restart]")?.addEventListener("click", () => ui.restartSim());
+  root.querySelectorAll("[data-speed]").forEach((b) => b.addEventListener("click", () => ui.setSpeed(Number(b.dataset.speed))));
+  root.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => switchMode(b.dataset.mode)));
   root.querySelector("[data-auto]")?.addEventListener("click", () => { ui.pinned = null; ui.lastSwitch = 0; chooseFocus(); render(); });
+}
+
+function simNote() {
+  const done = ui.simDone?.();
+  return `<div class="note simbar"><span><b style="color:var(--chalk)">Simulated Sunday, not real games.</b> The real Week 6 schedule, players and projections in ${esc(ui.data.user)}'s league, with made-up plays to test the app${done ? ". All games final." : "."}</span>
+    <span class="simctl"><span class="seg" role="group" aria-label="Speed">${[1, 3, 10].map((x) => `<button type="button" data-speed="${x}" aria-pressed="${ui.speed === x}">${x}×</button>`).join("")}</span>
+    <button class="pill" type="button" data-restart>${done ? "Play again" : "Restart"}</button>
+    <button class="pill" type="button" data-mode="replay">Real Sunday-night replay</button>
+    ${ui.hasServer ? `<button class="pill" type="button" data-mode="live">Back to live</button>` : ""}</span></div>`;
 }
 
 function renderHeader() {
@@ -192,7 +291,7 @@ function renderHeader() {
   const live = ui.mode === "live";
   s.className = `status ${live && !ui.error ? "live" : ""}`;
   const ago = ui.updatedAt ? Math.round((Date.now() - ui.updatedAt) / 1000) : null;
-  s.querySelector("span").textContent = live ? (ui.error ? "Reconnecting" : `Live · ${ago ?? 0}s ago`) : ui.mode === "replay" ? "Replay · not live" : "Loading";
+  s.querySelector("span").textContent = live ? (ui.error ? "Reconnecting" : `Live · ${ago ?? 0}s ago`) : ui.mode === "replay" ? "Replay · not live" : ui.mode === "sim" ? "Simulated · not real" : "Loading";
   $("#fantasyToggle").setAttribute("aria-pressed", String(ui.fantasy));
   document.querySelectorAll("[data-view]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === ui.view)));
 }
@@ -214,24 +313,27 @@ function renderLeagues() {
 }
 
 function renderBoard(r) {
-  const open = r.filter((x) => x.game.state !== "post");
+  const open = watchable();
   const finals = r.filter((x) => x.game.state === "post");
   const focus = open.find((x) => x.game.id === ui.focusId) ?? open[0];
   const rest = open.filter((x) => x !== focus);
+  const liveRest = rest.filter((x) => x.game.state === "in"), later = rest.filter((x) => x.game.state === "pre");
+  const laterList = later.length ? `<h3>Coming up</h3>${later.map(miniCard).join("")}` : "";
   const doneLine = finals.length ? `<p class="done">${finals.length} games final today: ${finals.map((x) => `${esc(x.game.away)} ${x.game.awayScore}–${x.game.homeScore} ${esc(x.game.home)}`).join(" · ")}</p>` : "";
   if (!focus) return `<main class="board"><p class="note">No games left this week.</p>${doneLine}</main>`;
   if (ui.view === "grid") {
-    return `<main class="board grid">${focusCard(focus)}${rest.map(miniCard).join("")}</main>${doneLine}`;
+    return `<main class="board grid">${focusCard(focus)}${liveRest.map(miniCard).join("")}</main>
+      <section class="side">${laterList}${doneLine}</section>`;
   }
   return `<main class="board focus">${focusCard(focus)}
-    <aside class="side"><h3>Up next for you</h3>${rest.map(miniCard).join("") || `<p class="done">Nothing else live.</p>`}${doneLine}</aside></main>`;
+    <aside class="side"><h3>Also live</h3>${liveRest.map(miniCard).join("") || `<p class="done">Nothing else live.</p>`}${laterList}${doneLine}</aside></main>`;
 }
 
 function focusCard(x) {
   const g = x.game;
   const hot = x.live >= 2;
   const ball = (t) => (g.offense === t ? `<i class="ballmark" title="Has the ball"></i>` : "");
-  const status = g.state === "pre" ? `<b>${new Date(g.kickoff).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}</b>Kickoff`
+  const status = g.state === "pre" ? `<b>${kickoffLabel(g)}</b>Kickoff`
     : `<b>Q${g.period > 4 ? "OT" : g.period} ${clock(g.clockSec)}</b>${g.homeWinProb != null ? `${esc(g.home)} win ${pct(g.homeWinProb)}` : ""}`;
   const feed = ui.feeds.get(g.id) ?? [];
   return `<section class="card focus-card ${hot ? "hot" : ""}" aria-label="Big screen">
@@ -250,6 +352,8 @@ function focusCard(x) {
   </section>`;
 }
 
+const kickoffLabel = (g) => (ui.mode === "sim" ? "Later today" : new Date(g.kickoff).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }));
+
 function stakeRow(p) {
   const key = `${p.owner}:${p.id}`;
   return `<div class="stake ${p.owner} ${ui.flashes.has(key) ? "flash" : ""}">
@@ -262,7 +366,7 @@ function stakeRow(p) {
 
 function miniCard(x) {
   const g = x.game;
-  const meta = g.state === "pre" ? new Date(g.kickoff).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })
+  const meta = g.state === "pre" ? kickoffLabel(g)
     : `Q${g.period} ${clock(g.clockSec)}${g.downText ? ` · ${g.downText}` : ""}`;
   const hot = x.live >= 2;
   return `<button class="mini ${hot ? "hot" : ""}" type="button" data-game="${esc(g.id)}" aria-label="Show ${esc(g.name)} on the big screen">
@@ -319,8 +423,10 @@ function renderSetup(root) {
     <label for="username">Sleeper username</label>
     <input id="username" autocomplete="username" required placeholder="ontopgun">
     <button class="go" type="submit">Connect</button>
+    <button class="pill" type="button" data-demo>Or try the demo Sunday</button>
     ${ui.error ? `<p class="err">${esc(ui.error)}</p>` : ""}
   </form>`;
+  root.querySelector("[data-demo]").addEventListener("click", () => switchMode("sim"));
   $("#setup").addEventListener("submit", (e) => {
     e.preventDefault();
     ui.username = $("#username").value.trim();
@@ -337,8 +443,5 @@ setInterval(renderHeader, 1000);
 
 // ---------- Start ----------
 
-const hasServer = await fetch("/proxy/ping").then((r) => r.ok).catch(() => false);
-ui.mode = hasServer ? "live" : "replay";
-if (ui.mode === "live" && ui.username) startLive();
-else if (ui.mode === "live") render();
-else startReplay();
+ui.hasServer = await fetch("/proxy/ping").then((r) => r.ok).catch(() => false);
+switchMode(ui.hasServer ? "live" : "sim");

@@ -50,6 +50,9 @@ header.top .wrap { display: flex; align-items: center; gap: 12px; padding-block:
 .toggle[aria-pressed="true"] .knob { background: var(--you); }
 .toggle[aria-pressed="true"] .knob::after { transform: translateX(12px); background: var(--you-ink); }
 
+.simbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; }
+.simctl { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.note .pill { color: var(--chalk); font: 600 12px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 10px; }
 .note { margin-block: 12px 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; color: var(--mute); font-size: 13px; }
 
 .leagues { display: flex; gap: 10px; overflow-x: auto; padding-block: 12px; scrollbar-width: thin; }
@@ -166,6 +169,6 @@ main.board.grid .focus-card { grid-column: 1 / -1; }
   </div>
 </header>
 <div class="wrap" id="root">
-  <p class="note">Loading Sunday night, Week 6…</p>
+  <p class="note">Loading…</p>
 </div>
 <script type="module" src="app.js"></script>
