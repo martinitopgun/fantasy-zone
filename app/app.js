@@ -55,17 +55,23 @@ async function startLive() {
 
 async function startReplay() {
   const demo = await (await fetch("demo.json")).json();
-  let i = 0;
+  let i = 0, timer = null;
   const next = () => {
     const f = demo.frames[i];
     // Re-link each player to his game object (the file stores only the id).
     for (const m of f.matchups) for (const p of [...m.mine, ...m.theirs]) p.game = f.games.find((g) => g.id === p.gameId) ?? null;
-    if (i === 0) { ui.prev = null; ui.feeds.clear(); }
+    ui.replay = { step: i + 1, steps: demo.frames.length, done: i === demo.frames.length - 1 };
     ingest({ games: f.games, matchups: f.matchups, week: demo.week, user: demo.user });
-    i = (i + 1) % demo.frames.length;
+    i += 1;
+    if (i >= demo.frames.length) clearInterval(timer); // play once, then stop on the last moment
   };
-  next();
-  setInterval(next, REPLAY_MS);
+  ui.restartReplay = () => {
+    clearInterval(timer);
+    i = 0; ui.data = null; ui.prev = null; ui.feeds.clear(); ui.focusId = null; ui.pinned = null;
+    next();
+    timer = setInterval(next, REPLAY_MS);
+  };
+  ui.restartReplay();
 }
 
 // ---------- Each update ----------
@@ -170,12 +176,14 @@ function render() {
   }
   const r = ranked();
   const note = ui.mode === "replay"
-    ? `<p class="note">Replay of real data from Sunday night, Week 6: ${esc(ui.data.user)}'s Sleeper league with live ESPN game snapshots. It loops every ${REPLAY_MS / 1000 * 3} seconds. Start the app on a computer (npm start) for live games.</p>`
+    ? `<p class="note"><b style="color:var(--chalk)">Replay, not live.</b> Three real moments saved from Sunday night, Week 6 (DAL @ GB, 2nd quarter) in ${esc(ui.data.user)}'s league, shown in order${ui.replay?.done ? ". Replay finished." : ` (moment ${ui.replay?.step} of ${ui.replay?.steps})…`} This preview can't connect to live games; run the app on a computer (npm start) for that.
+        ${ui.replay?.done ? `<button class="pill" type="button" data-replay>Watch the replay again</button>` : ""}</p>`
     : ui.error ? `<p class="note">Last update failed (${esc(ui.error)}). Retrying in ${POLL_MS / 1000}s.</p>` : "";
   root.innerHTML = note + renderLeagues() + (ui.view === "guys" ? renderGuys() : renderBoard(r));
   root.querySelectorAll("[data-game]").forEach((b) => b.addEventListener("click", () => {
     ui.pinned = b.dataset.game; ui.focusId = b.dataset.game; render();
   }));
+  root.querySelector("[data-replay]")?.addEventListener("click", () => ui.restartReplay());
   root.querySelector("[data-auto]")?.addEventListener("click", () => { ui.pinned = null; ui.lastSwitch = 0; chooseFocus(); render(); });
 }
 
@@ -184,7 +192,7 @@ function renderHeader() {
   const live = ui.mode === "live";
   s.className = `status ${live && !ui.error ? "live" : ""}`;
   const ago = ui.updatedAt ? Math.round((Date.now() - ui.updatedAt) / 1000) : null;
-  s.querySelector("span").textContent = live ? (ui.error ? "Reconnecting" : `Live · ${ago ?? 0}s ago`) : ui.mode === "replay" ? "Replay · Wk 6" : "Loading";
+  s.querySelector("span").textContent = live ? (ui.error ? "Reconnecting" : `Live · ${ago ?? 0}s ago`) : ui.mode === "replay" ? "Replay · not live" : "Loading";
   $("#fantasyToggle").setAttribute("aria-pressed", String(ui.fantasy));
   document.querySelectorAll("[data-view]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === ui.view)));
 }
