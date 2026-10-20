@@ -60,6 +60,8 @@ export function createTracker({ leagues, players, games }) {
   const feed = []; // newest first
   const history = new Map(); // league id -> [{ t, wp, cardId }]: your win chance after every play that moved it
   const posById = new Map(players.map((p) => [p.id, p.pos]));
+  const playerById = new Map(players.map((p) => [p.id, p]));
+  const playsByGame = new Map(); // game id -> its plays so far, in order (drives)
   let version = 0; // goes up whenever anything changes, so the screen can skip ticks where nothing happened
   const starters = leagues.flatMap((l) => [...l.mine.map((p) => ({ ...p, owner: "me", league: l })), ...l.theirs.map((p) => ({ ...p, owner: "opponent", league: l }))]);
 
@@ -118,6 +120,8 @@ export function createTracker({ leagues, players, games }) {
     const cards = [];
     for (const play of fresh) {
       seen.add(play.id);
+      if (!playsByGame.has(gameId)) playsByGame.set(gameId, []);
+      playsByGame.get(gameId).push(play);
       version++;
       const involved = starters.filter((p) => p.team === g.home || p.team === g.away);
       // A player's stat line as scored (bonuses included), so a card can show where its points came from.
@@ -246,6 +250,18 @@ export function createTracker({ leagues, players, games }) {
       return out;
     },
     game: (id) => gameMap.get(id),
+    plays: (gameId) => playsByGame.get(gameId) ?? [],
+    // Box score so far (live, unofficial): each team's players with their stat lines, from the plays seen.
+    box: (gameId) => {
+      const g = gameMap.get(gameId);
+      if (!g) return null;
+      const out = { [g.away]: [], [g.home]: [] };
+      for (const [id, line] of stats) {
+        const p = playerById.get(id);
+        if (p && out[p.team]) out[p.team].push({ id, name: `${p.first} ${p.last}`, pos: p.pos, line });
+      }
+      return out;
+    },
     // Every team in the league (League tab): points now, expected final, spread of what's left, who's playing.
     //   teams: [{ roster_id, starters: [{ id, pos, team, projected, profile }] }]
     board: (teams, scoring) => teams.map((t) => {

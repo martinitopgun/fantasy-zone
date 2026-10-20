@@ -61,6 +61,11 @@ export function parseSummary(data) {
     favorite: odds?.details ? team(odds.details.split(" ")[0]) : null,
     spread: odds?.details ? Math.abs(Number(odds.details.split(" ")[1])) || 0 : null,
     overUnder: odds?.overUnder ?? null,
+    // Live only (the saved replay games don't keep them): where it's played and who's hurt.
+    venue: data.gameInfo?.venue ? { name: data.gameInfo.venue.fullName, city: data.gameInfo.venue.address?.city ?? null, state: data.gameInfo.venue.address?.state ?? null } : null,
+    injuries: (data.injuries ?? []).flatMap((t) => (t.injuries ?? []).map((i) => ({
+      team: team(t.team?.abbreviation ?? ""), name: i.athlete?.displayName ?? "", pos: i.athlete?.position?.abbreviation ?? "", status: i.status ?? "",
+    }))),
     plays,
   };
 }

@@ -2,8 +2,9 @@
 //   Head:  ‹ (× on a wide screen) · "CHI 14 @ ATL 0  Q2 12:08" · [‹][›] the previous / next live game
 //          (in the order the game chips had when you opened it; it never reshuffles while you look)
 //   Field: who has the ball and where (a mini field), or the kickoff time, or Final
-//   Then:  the game's own tabs, swipe or tap: Plays (All / Scoring / My players) · My guys · Momentum.
-//          The tab you're on stays picked when you switch games.
+//   Then:  the game's own tabs, swipe or tap: Plays (All / Scoring / My players) · Drives · Box (live,
+//          unofficial, from the plays so far) · My guys · Info (what was expected, the momentum line, and live:
+//          the stadium and injuries). The tab you're on stays picked when you switch games.
 // Everything is updated in place; the head's buttons are never rebuilt, so a tap always lands and focus
 // stays put when you switch games.
 //
@@ -15,7 +16,8 @@ import { esc, pct, n1 } from "./cards.js";
 import { fieldSvg, momentumSvg } from "./charts.js";
 import { createFeedList } from "../ui/feed.js";
 import { createPager } from "../ui/pager.js";
-import { gameClock, kickoffShort } from "../src/view-models.js";
+import { gameClock, kickoffShort, expectText } from "../src/view-models.js";
+import { drives } from "../src/drives.js";
 
 const set = (el, html) => { if (el && el._h !== html) el.innerHTML = el._h = html; };
 const text = (el, t) => { if (el && el.textContent !== t) el.textContent = t; };
@@ -45,7 +47,50 @@ function guysHTML(g, snap) {
       <span class="left num">${g.state === "post" ? "final" : `+${n1(Math.max(0, p.remaining))} exp`}</span></div>`).join("")}</div>`;
 }
 
-const SUBTABS = [["plays", "Plays"], ["guys", "My guys"], ["momentum", "Momentum"]];
+// Drives, newest first: who had it, how it ended, "8 plays · 75 yds · 4:12".
+const RESULT = { TD: "TD", FG: "FG", PUNT: "Punt", INT: "Interception", FUMBLE: "Fumble", "MISSED FG": "Missed FG", DOWNS: "Downs", SAFETY: "Safety", "END OF HALF": "End of half", "END OF GAME": "End of game" };
+function drivesHTML(plays) {
+  const list = drives(plays).reverse();
+  if (!list.length) return "";
+  return `<ol class="drives">${list.map((d) => {
+    const first = d.plays[0];
+    return `<li class="drive${d.result === "TD" || d.result === "FG" ? " score" : ""}">
+      <span class="dteam">${esc(d.team)}</span>
+      <span class="dmain"><b>${esc(d.result ? RESULT[d.result] ?? d.result : "On the field")}</b><small class="num">${esc(d.text)}</small></span>
+      <span class="dwhen num">${first.period > 4 ? "OT" : `Q${first.period}`} ${esc(first.clock)}</span></li>`;
+  }).join("")}</ol>`;
+}
+
+// Box score from the plays so far. Your players in yellow, your opponent's in purple.
+function boxHTML(g, box, owners) {
+  if (!box) return "";
+  const n = (l, k) => l?.[k] ?? 0;
+  const who = (p) => `<td class="tl ${owners.get(p.id) ?? ""}">${esc(p.name)}</td>`;
+  const table = (title, head, rows) => (rows.length ? `<table class="box"><caption>${title}</caption><thead><tr><th class="tl"></th>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table>` : "");
+  const team = (t) => {
+    const ps = box[t] ?? [];
+    const pass = ps.filter((p) => n(p.line, "pass_att")).sort((a, b) => n(b.line, "pass_yd") - n(a.line, "pass_yd"))
+      .map((p) => `<tr>${who(p)}<td>${n(p.line, "pass_cmp")}/${n(p.line, "pass_att")}</td><td>${n(p.line, "pass_yd")}</td><td>${n(p.line, "pass_td")}</td><td>${n(p.line, "pass_int")}</td></tr>`);
+    const rush = ps.filter((p) => n(p.line, "rush_att")).sort((a, b) => n(b.line, "rush_yd") - n(a.line, "rush_yd"))
+      .map((p) => `<tr>${who(p)}<td>${n(p.line, "rush_att")}</td><td>${n(p.line, "rush_yd")}</td><td>${n(p.line, "rush_td")}</td></tr>`);
+    const rec = ps.filter((p) => n(p.line, "rec") || n(p.line, "rec_tgt")).sort((a, b) => n(b.line, "rec_yd") - n(a.line, "rec_yd"))
+      .map((p) => `<tr>${who(p)}<td>${n(p.line, "rec")}</td><td>${n(p.line, "rec_yd")}</td><td>${n(p.line, "rec_td")}</td></tr>`);
+    const body = table("Passing", ["C/ATT", "YDS", "TD", "INT"], pass) + table("Rushing", ["CAR", "YDS", "TD"], rush) + table("Receiving", ["REC", "YDS", "TD"], rec);
+    return `<section class="boxteam"><h3 class="label">${esc(t)}</h3>${body || `<p class="empty">No stats yet.</p>`}</section>`;
+  };
+  return `<p class="sheet-note">Live, unofficial: added up from the plays so far.</p>${team(g.away)}${team(g.home)}`;
+}
+
+// What was expected before kickoff, and (live) where it's played and who's hurt.
+function infoHTML(g, mo) {
+  const expect = expectText(g);
+  const venue = g.venue ? `<p class="info-line">${esc(g.venue.name)}${g.venue.city ? ` · ${esc(g.venue.city)}${g.venue.state ? `, ${esc(g.venue.state)}` : ""}` : ""}</p>` : "";
+  const hurt = (g.injuries ?? []).length ? `<h3 class="label">Injuries</h3><ul class="injuries">${g.injuries.map((i) => `<li><b>${esc(i.team)}</b> ${esc(i.name)} ${esc(i.pos)} · ${esc(i.status)}</li>`).join("")}</ul>` : "";
+  return `${expect ? `<p class="info-line">${esc(expect)}</p>` : ""}${venue}
+    ${mo.length > 1 ? momentumSvg(g, mo) : `<p class="empty">The momentum line starts with the first play.</p>`}${hurt}`;
+}
+
+const SUBTABS = [["plays", "Plays"], ["drives", "Drives"], ["box", "Box"], ["guys", "My guys"], ["info", "Info"]];
 const PLAY_FILTERS = [["all", "All", () => true], ["scoring", "Scoring", (c) => c.scored], ["mine", "My players", (c) => c.impacts.length > 0]];
 
 export function createGameLayer({ el, ui, order = () => [] }) {
@@ -78,14 +123,17 @@ export function createGameLayer({ el, ui, order = () => [] }) {
           </div>
           <div data-feed></div>
         </section>
+        <section class="page" id="gpage-drives" role="tabpanel" aria-labelledby="gtab-drives"><div class="gdrives" data-drives></div></section>
+        <section class="page" id="gpage-box" role="tabpanel" aria-labelledby="gtab-box"><div class="gbox" data-box></div></section>
         <section class="page" id="gpage-guys" role="tabpanel" aria-labelledby="gtab-guys"><div class="gguys" data-guys></div></section>
-        <section class="page" id="gpage-momentum" role="tabpanel" aria-labelledby="gtab-momentum"><div class="gmomentum" data-momentum></div></section>
+        <section class="page" id="gpage-info" role="tabpanel" aria-labelledby="gtab-info"><div class="ginfo" data-info></div></section>
       </div>`;
     parts = {
       name: el.querySelector(".gt-name"), clock: el.querySelector(".gt-clock"), sub: el.querySelector(".gt-sub"),
       pin: el.querySelector('[data-act="pin"]'),
       prev: el.querySelector('[data-step="-1"]'), next: el.querySelector('[data-step="1"]'),
-      field: el.querySelector("[data-field]"), guys: el.querySelector("[data-guys]"), momentum: el.querySelector("[data-momentum]"),
+      field: el.querySelector("[data-field]"), guys: el.querySelector("[data-guys]"), info: el.querySelector("[data-info]"),
+      drives: el.querySelector("[data-drives]"), box: el.querySelector("[data-box]"),
       plays: el.querySelector("#gpage-plays"), feed: el.querySelector("[data-feed]"), pill: el.querySelector(".newpill"),
     };
     const tabs = [...el.querySelectorAll('.subtabs [role="tab"]')], pages = [...el.querySelectorAll(".subpager > .page")];
@@ -117,8 +165,10 @@ export function createGameLayer({ el, ui, order = () => [] }) {
     set(parts.field, g.state === "in" && g.offense && g.yardsToGoal != null ? fieldSvg(g) : "");
     parts.field.hidden = !parts.field._h;
     set(parts.guys, guysHTML(g, ctx.snap) || `<p class="empty">Nobody in your matchup plays in this game.</p>`);
-    const mo = ui.tracker.momentum(g.id);
-    set(parts.momentum, mo.length > 1 ? momentumSvg(g, mo) : `<p class="empty">The momentum line starts with the first play.</p>`);
+    set(parts.info, infoHTML(g, ui.tracker.momentum(g.id)));
+    set(parts.drives, drivesHTML(ui.tracker.plays(g.id)) || `<p class="empty">${g.state === "pre" ? `No drives yet. Kickoff is ${kickoffShort(g, now())}.` : "No drives yet."}</p>`);
+    const owners = new Map(ctx.snap.matchups.flatMap((m) => [...m.mine, ...m.theirs]).map((p) => [p.id, p.owner]));
+    set(parts.box, g.state === "pre" ? `<p class="empty">The box score starts at kickoff.</p>` : boxHTML(g, ui.tracker.box(g.id), owners));
     // ‹ › go round the frozen order (from the last game, › goes back to the first).
     const ids = order(), k = ids.indexOf(g.id);
     const pick = (step) => {
@@ -143,7 +193,7 @@ export function createGameLayer({ el, ui, order = () => [] }) {
     if (fresh) skeleton();
     id = gid;
     feed?.destroy();
-    parts.guys._h = parts.momentum._h = parts.field._h = null;
+    parts.guys._h = parts.info._h = parts.drives._h = parts.box._h = parts.field._h = null;
     paint(g, ctx);
     feed = createFeedList(parts.feed, {
       root: parts.plays,

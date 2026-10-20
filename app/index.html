@@ -275,6 +275,22 @@ button:active { opacity: .75; }
 .pk-score { display: flex; gap: 18px; padding: 10px 2px; font-size: 13px; color: var(--mute); }
 .pk-score b { display: block; font: 800 28px/1 var(--display); color: var(--chalk); }
 .pickschip[aria-pressed="true"] { background: var(--chalk); color: var(--turf); border-color: var(--chalk); }
+/* Game: drives, box, info (M8) */
+.drives { list-style: none; margin: 0; padding: 4px 0 20px; }
+.drive { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; padding: 10px 2px; border-bottom: 1px solid var(--line); }
+.dteam { font: 700 15px/1 var(--display); color: var(--mute); }
+.dmain b { display: block; font: 700 16px/1.2 var(--display); } .dmain small { font-size: 12px; color: var(--mute); }
+.drive.score .dmain b { color: var(--hot); }
+.dwhen { font-size: 12px; color: var(--mute); }
+.boxteam { margin: 6px 0 14px; }
+table.box { width: 100%; border-collapse: collapse; font-size: 13px; margin: 4px 0 10px; }
+table.box caption { text-align: left; font: 600 12px/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--mute); padding: 6px 0; }
+table.box th { font: 600 11px/1 var(--display); color: var(--mute); text-align: right; padding: 4px 6px; }
+table.box td { text-align: right; padding: 6px; border-top: 1px solid var(--line); }
+table.box .tl { text-align: left; } table.box td.me { color: var(--you); font-weight: 600; } table.box td.opponent { color: var(--opp); font-weight: 600; }
+.info-line { margin: 8px 0; font-size: 15px; }
+.injuries { margin: 4px 0 16px; padding-left: 18px; font-size: 13px; }
+.subtabs [role="tab"] { padding: 0 4px; }
 /* Settings switches */
 .setlist { display: grid; gap: 8px; margin: 8px 0 14px; }
 .setrow { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; text-align: left; color: var(--chalk); }

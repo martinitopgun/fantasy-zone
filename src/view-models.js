@@ -306,3 +306,11 @@ export function onFieldVM(m) {
     .filter((p) => ON_FIELD.has(p.pos) && p.game?.state === "in" && p.game.offense && p.game.offense === p.nflTeam)
     .map((p) => ({ id: p.id, name: p.name, pos: p.pos, owner: p.owner, gameId: p.game.id, red: !!p.game.isRedZone }));
 }
+
+// A game's Info line from before kickoff: "BAL expected to win by 3 · expected total points 40.5".
+export function expectText(g) {
+  const out = [];
+  if (g.favorite && g.spread != null) out.push(g.spread ? `${g.favorite} expected to win by ${g.spread}` : "Expected to be even");
+  if (g.overUnder != null) out.push(`expected total points ${g.overUnder}`);
+  return out.join(" · ");
+}
