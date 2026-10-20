@@ -72,7 +72,10 @@ button:active { opacity: .75; }
 .appbar .score .sbp { display: none; font: 600 11px/1 var(--display); letter-spacing: 0.04em; color: var(--mute); }
 .appbar .score .sbwp { display: inline-flex; align-items: baseline; gap: 4px; font: 700 16px/1 var(--display); }
 .appbar .score .sbwp .sbw { display: none; }
-@media (max-width: 399px) { .appbar .score .sb .sbw { display: none; } .appbar .score { gap: 8px; } }
+@media (max-width: 399px) { .appbar .score .sb .sbw { display: none; } .appbar .score { gap: 6px; } .appbar .score .sbn { font-size: 19px; } .appbar .score .sbwp { font-size: 15px; } }
+@media (max-width: 430px) { .tbtn, .iconbtn { min-width: 34px; padding: 0 3px; } .iconbtn.more { min-width: 26px; } .clockpill { min-width: 0; margin: 0; padding: 0 7px; } .appbar .score { padding-right: 4px; } }
+@media (max-width: 399px) { .clockpill > svg:last-child { display: none; } }
+@media (max-width: 379px) { .appbar .score .sbwp { display: none; } } /* the yellow/purple bar under the top still shows who's winning */
 @media (max-width: 349px) { .appbar .score .sbn { font-size: 18px; } .appbar .score .sbwp { font-size: 14px; } .appbar .score { gap: 6px; } }
 .transport { display: flex; align-items: center; gap: 2px; flex: none; }
 .tbtn, .iconbtn { flex: none; height: 44px; min-width: 40px; display: inline-grid; place-items: center; padding: 0 6px; background: none; border: 0; border-radius: 8px; font: 700 16px/1 var(--display); letter-spacing: 0.02em; }

@@ -53,11 +53,13 @@ export function createLayers({ ui, onForward }) {
     }
   }
 
-  function runAfter() { clearTimeout(waiting); const then = ui.afterPop; ui.afterPop = null; then?.(); }
+  let pending = false; // a history jump is on its way; a second one would leave the app
+  function runAfter() { pending = false; clearTimeout(waiting); const then = ui.afterPop; ui.afterPop = null; then?.(); }
 
   // Wait for the popstate a history jump causes; if it never comes, finish the job by hand.
   function jump(n, until, then) {
     ui.afterPop = then ?? null;
+    pending = true;
     clearTimeout(waiting);
     try { history.go(n); } catch { drop(until); return runAfter(); }
     waiting = setTimeout(() => { drop(until); runAfter(); }, WAIT_MS);
@@ -66,6 +68,7 @@ export function createLayers({ ui, onForward }) {
   // In-app ‹, ×, Esc, a backdrop tap: close the top one. Never history.back() without our own step on top:
   // it would leave the page.
   function back(then) {
+    if (pending) return;
     const top = ui.stack.at(-1);
     if (!top) return then?.();
     const st = histState();
@@ -77,6 +80,7 @@ export function createLayers({ ui, onForward }) {
   // The scorebug, "All games ›", switching Live/Replay: close every layer and sheet in one step. Never
   // history.go(0): it reloads the page.
   function closeAll(then) {
+    if (pending) { const prev = ui.afterPop; ui.afterPop = () => { prev?.(); closeAll(then); }; return; }
     const st = histState();
     if (ui.depth > 0 && st?.fz && st.depth === ui.depth) return jump(-ui.depth, 0, then);
     drop(0);

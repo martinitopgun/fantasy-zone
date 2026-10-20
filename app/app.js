@@ -294,7 +294,7 @@ function openGame(id) {
       placeLayer();
       rail.markCurrent();
       setHash(ui.tab); // matters only when the layer had no Back step of its own
-      const back = opener?.isConnected && !opener.closest("[inert]") && opener.getClientRects().length ? opener
+      const back = opener && opener !== document.body && opener.isConnected && !opener.closest("[inert]") && opener.getClientRects().length ? opener
         : ui.cols ? ui.pages[ui.cols.at(-1)]?.querySelector(".coltitle") : tabbar.querySelector('[aria-selected="true"]');
       back?.focus({ preventScroll: true });
     },
