@@ -24,6 +24,7 @@ import { createAlerts, WP_ALERT } from "./src/alerts.js";
 import { createBanner } from "./ui/banner.js";
 import { createStory } from "./views/story.js";
 import { storyCards } from "./src/story.js";
+import { createPicks } from "./src/picks.js";
 
 const POLL_MS = 10_000;
 const TICK_MS = 250;
@@ -419,8 +420,19 @@ function flush() {
   if (gameLayer.id) gameLayer.update(ctx, ui.pending);
   renderPin(ctx);
   headsUp(ctx, ui.pending);
+  stepPicks(ctx, ui.pending);
   if (story.isOpen && ui.pending.length) story.update(storyNow(ctx));
   ui.pending = [];
+}
+
+// Free Picks (plan M7): new questions, locks and grades from each update; Zone shows them.
+function stepPicks(ctx, cards) {
+  if (!ui.picks || !ui.fantasyOn) return false;
+  return ui.picks.step({ cards, snap: ctx.snap, now: ui.replay?.time ?? Date.now(), speed: ui.mode === "replay" ? ui.speed : 1 });
+}
+function newPicks(mode) {
+  const key = `picks:${mode}`;
+  ui.picks = createPicks({ saved: store.get(key, null), onSave: (s) => store.set(key, s) });
 }
 
 // ---------- Heads-up (plan M4): banners and tab badges ----------
@@ -501,6 +513,7 @@ function resetAll() {
   trackWp(ctx.snap);
   alerts.prime(ctx.snap);
   banner.hide();
+  ui.picks?.reset(); stepPicks(ctx, []); // a jump: open picks are gone; kickoff picks for what's next
   ui.badges = { zone: 0, matchup: false }; ui.seenWp = null;
   appbar.update(ctx);
   rail.reset(ctx);
@@ -534,6 +547,7 @@ async function startReplay() {
   }
   ui.replay = createReplay(ui.replayData, { startAt: REPLAY_START });
   ui.tracker = ui.replay.tracker;
+  newPicks("replay");
   hideBoot();
   buildTabs(); // League appears now that its data is here
   resetAll();
@@ -559,6 +573,7 @@ async function startLive() {
     ui.live = await createLive(fetchJson, { username: ui.username });
     await ui.live.poll(); // what already happened today, quietly
     ui.tracker = ui.live.tracker;
+    newPicks("live");
     ui.updatedAt = Date.now();
   } catch (e) {
     ui.error = e.message; ui.connecting = false;

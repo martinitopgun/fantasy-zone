@@ -191,6 +191,7 @@ export function createTracker({ leagues, players, games }) {
         id: play.id, gameId, gameName: g.name, home: g.home, away: g.away, homeScore: g.homeScore, awayScore: g.awayScore,
         wallclock: play.wallclock, period: play.period, clock: play.clock, situation: play.start?.downText ?? null,
         offense: play.offense, kind: a.kind, td: a.td, turnover: a.turnover, yards: a.yards,
+        ytg: play.end?.yardsToGoal ?? null, // yards to the end zone after the play (Free Picks: red-zone entries)
         name: keyPlayer ? `${keyPlayer.first} ${keyPlayer.last}` : a.player ?? a.label ?? "",
         label: headline(a),
         from: a.kind === "catch" && passer ? `from ${passer.first} ${passer.last}` : a.kind === "incomplete" && passer && a.target ? `from ${passer.first} ${passer.last}` : a.kind === "int" && a.by ? `by ${a.by}` : null,
