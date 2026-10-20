@@ -11,7 +11,7 @@ import { columnsFor, visibleTabs, nearTabs, nextSpeed, SPEEDS } from "./src/view
 import { createPager } from "./ui/pager.js";
 import { H, createSheet, createLayers } from "./ui/layers.js";
 import { createAppbar } from "./views/appbar.js";
-import { clockSheetHTML, refreshClockSheet, liveSheetHTML, findSheetHTML, settingsSheetHTML, setupHTML } from "./views/sheets.js";
+import { clockSheetHTML, refreshClockSheet, liveSheetHTML, findSheetHTML, playSheetHTML, settingsSheetHTML, setupHTML } from "./views/sheets.js";
 import { createZoneView } from "./views/zone.js";
 import { createMatchupView } from "./views/matchup.js";
 import { createGamesView } from "./views/games.js";
@@ -317,6 +317,7 @@ function openSheet(kind) {
   const entry = { kind: "sheet", state: { sheet: kind }, show: () => sheet.open(kind, html), hide: () => sheet.close() };
   if (layers.top()?.kind === "sheet") layers.swapTop(entry); else layers.open(entry);
 }
+function openPlay(id) { ui.playId = id; openSheet("play"); }
 function closeSheet(then) { if (layers.top()?.kind === "sheet") layers.back(then); else then?.(); }
 
 // On a phone the layer covers the tabs and pages; on a wide screen only the last column.
@@ -478,6 +479,7 @@ const SHEETS = {
   clock: () => clockSheetHTML({ ui, wins: windows(ui.replayData, { from: REPLAY_START - 6 * 3600_000 }) }),
   live: () => liveSheetHTML({ ui }),
   find: () => findSheetHTML(),
+  play: () => playSheetHTML(ui.tracker?.feed().find((c) => c.id === ui.playId)),
   settings: () => settingsSheetHTML(),
 };
 
@@ -491,7 +493,8 @@ document.addEventListener("click", (e) => {
   }
   if (t.dataset.close === "layer") return closeGame();
   if (t.dataset.step) return stepGame(Number(t.dataset.step));
-  if (t.dataset.game) return openGame(t.dataset.game); // a play card, a game chip or a tile (play details come later)
+  if (t.matches("article.play") && !ui.cols) return openPlay(t.dataset.id); // phones: the play's details first
+  if (t.dataset.game) return openGame(t.dataset.game); // a game chip, a tile, a play card on a wide screen
   if (t.dataset.sheet) {
     if (t.dataset.sheet === "clock" && !ui.replay) return;
     return openSheet(t.dataset.sheet);
@@ -515,7 +518,7 @@ document.addEventListener("keydown", (e) => {
     if (ui.stack.length) { e.preventDefault(); layers.back(); }
     return;
   }
-  if ((e.key === "Enter" || e.key === " ") && e.target.matches?.("article.play[data-game]")) { e.preventDefault(); return openGame(e.target.dataset.game); }
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches?.("article.play[data-game]")) { e.preventDefault(); return ui.cols ? openGame(e.target.dataset.game) : openPlay(e.target.dataset.id); }
   const typing = e.target.closest?.("input, textarea, select, [contenteditable]");
   if (typing || sheet.kind || e.metaKey || e.ctrlKey || e.altKey) return;
   if ((e.key === "[" || e.key === "]") && layers.top()?.kind === "game") return stepGame(e.key === "[" ? -1 : 1); // previous / next game

@@ -266,6 +266,15 @@ button:active { opacity: .75; }
 /* ---- Game layer (covers the tabs; on wide screens only the last column) ---- */
 .layer { grid-row: tabs-start / main-end; grid-column: 1; z-index: 8; min-height: 0; background: var(--turf); display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
 .layer .subtabs { grid-area: auto; }
+.sheet-play { color: var(--mute); font-size: 14px; }
+.breakdown { border-left: 3px solid var(--line); padding: 6px 0 6px 10px; margin-block: 10px; }
+.breakdown.me { border-left-color: var(--you); } .breakdown.opponent { border-left-color: var(--opp); }
+.breakdown h3 { display: flex; justify-content: space-between; gap: 10px; margin: 0 0 4px; font: 700 17px/1.2 var(--display); }
+.breakdown h3 small { color: var(--mute); font-weight: 600; }
+.breakdown ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 14px; }
+.breakdown li { display: flex; justify-content: space-between; gap: 10px; color: var(--mute); }
+.breakdown li b { color: var(--chalk); } .breakdown li b.neg { color: var(--down); }
+.sheet-win { font: 600 15px/1.3 var(--display); letter-spacing: 0.02em; }
 .layer .subpager { min-height: 0; }
 .gguys, .gmomentum { padding-top: 10px; }
 .layer-head { display: flex; align-items: center; gap: 4px; min-height: 48px; padding: 0 var(--gut-r) 0 calc(var(--gut-l) - 8px); border-bottom: 1px solid var(--line); }

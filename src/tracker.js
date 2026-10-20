@@ -119,7 +119,10 @@ export function createTracker({ leagues, players, games }) {
       seen.add(play.id);
       version++;
       const involved = starters.filter((p) => p.team === g.home || p.team === g.away);
+      // A player's stat line as scored (bonuses included), so a card can show where its points came from.
+      const lineOf = (p) => (p.pos === "DEF" ? (g.state !== "pre" ? defenseLine(p.team, g) : {}) : withBonuses(stats.get(p.id), p.pos));
       const before = new Map(involved.map((p) => [`${p.league.league.league_id}:${p.owner}:${p.id}`, pointsFor(p, p.league.scoring)]));
+      const linesBefore = new Map(involved.map((p) => [p.id, lineOf(p)]));
       const wpBefore = matchupViews().map((m) => m.winProb);
       const gameWpBefore = g.homeWinProb;
       const prevHome = g.homeScore, prevAway = g.awayScore;
@@ -175,7 +178,7 @@ export function createTracker({ leagues, players, games }) {
         const key = `${p.league.league.league_id}:${p.owner}:${p.id}`;
         if (kickoff && p.pos === "DEF") continue;
         const delta = pointsFor(p, p.league.scoring) - before.get(key);
-        if (Math.abs(delta) >= 0.05) impacts.push({ id: p.id, name: p.name, pos: p.pos, owner: p.owner, league: p.league.league.name, delta });
+        if (Math.abs(delta) >= 0.05) impacts.push({ id: p.id, name: p.name, pos: p.pos, owner: p.owner, league: p.league.league.name, delta, rows: scoreRows(linesBefore.get(p.id), lineOf(p), p.league.scoring) });
       }
       // A marker card never carries a win move: nothing happened on the field.
       const wp = views.map((m, i) => ({ league: m.league.name, before: marker ? m.winProb : wpBefore[i], after: m.winProb }));
@@ -235,6 +238,18 @@ export function createTracker({ leagues, players, games }) {
     },
     game: (id) => gameMap.get(id),
   };
+}
+
+// Where a play's points came from: each scored stat that changed, times what the league pays for it.
+// [[key, change, points], ...]; the points add up to the play's fantasy change.
+export function scoreRows(before = {}, after = {}, scoring = {}) {
+  const rows = [];
+  for (const k of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    const change = (after[k] ?? 0) - (before[k] ?? 0);
+    const pts = change * (scoring[k] ?? 0);
+    if (Math.abs(pts) >= 0.005) rows.push([k, change, pts]);
+  }
+  return rows.sort((a, b) => Math.abs(b[2]) - Math.abs(a[2]));
 }
 
 // Totals-based bonuses (100-yard games, TE premium, ...) are worked out from the running stat line.

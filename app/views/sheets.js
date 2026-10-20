@@ -1,7 +1,7 @@
 // What goes inside the bottom sheets (clock, live, Find, settings) and the "connect your league" form.
 // Plain HTML strings; app.js opens them with the sheet from ui/layers.js.
 
-import { esc, ET } from "./cards.js";
+import { esc, ET, n1, pct } from "./cards.js";
 import { SPEEDS } from "../src/view-models.js";
 
 // "Sun 1:40:12 PM ET", or "... · end of saved plays" when the replay has run out.
@@ -51,6 +51,39 @@ export function liveSheetHTML({ ui }) {
     <div class="sheet-actions">
       <button class="chipbtn" type="button" data-mode="replay">Watch last Sunday's replay</button>
       <button class="chipbtn" type="button" data-act="change-user">Use a different Sleeper user</button>
+      <button class="chipbtn" type="button" data-close="sheet">Done</button>
+    </div>`;
+}
+
+// What each scored stat is called on the play sheet.
+const STAT_NAMES = {
+  rush_yd: "rush yds", rec_yd: "receiving yds", pass_yd: "passing yds", rec: "catch", rush_td: "Rush TD", rec_td: "Receiving TD",
+  pass_td: "Passing TD", pass_int: "Interception thrown", fum_lost: "Fumble lost", pass_2pt: "2-pt pass", rec_2pt: "2-pt catch", rush_2pt: "2-pt run",
+  xpm: "Extra point", xpmiss: "Missed extra point", fgm: "Field goal", fgm_yds: "FG distance", fgmiss: "Missed field goal",
+  sack: "Sack", int: "Interception", fum_rec: "Fumble recovery", def_td: "Defensive TD", def_st_td: "Return TD", safe: "Safety", blk_kick: "Blocked kick",
+  def_st_ff: "Forced fumble on a return", bonus_rec_te: "TE catch bonus", bonus_rec_rb: "RB catch bonus", bonus_rec_wr: "WR catch bonus",
+  rush_td_40p: "40+ yd TD bonus", rush_td_50p: "50+ yd TD bonus", rec_td_40p: "40+ yd TD bonus", rec_td_50p: "50+ yd TD bonus", pass_td_40p: "40+ yd TD bonus", pass_td_50p: "50+ yd TD bonus",
+};
+const statName = (k) => STAT_NAMES[k]
+  ?? (/^bonus_.*_(\d+)$/.test(k) ? `${k.match(/_(\d+)$/)[1]}-yd game bonus` : /^(pts|yds)_allow_/.test(k) ? "Points/yards allowed tier" : /^fgm_/.test(k) ? "Field goal" : /_fd$|^bonus_fd/.test(k) ? "First down" : k.replace(/_/g, " "));
+const rowText = ([k, change, pts]) => {
+  const count = /_yd$|^fgm_yds/.test(k) ? `${change} ` : Math.abs(change) > 1 && !/^(pts|yds)_allow_/.test(k) ? `${change}× ` : "";
+  return `<li><span>${esc(count + statName(k))}</span><b class="num ${pts < 0 ? "neg" : ""}">${pts > 0 ? "+" : ""}${n1(pts)}</b></li>`;
+};
+
+// One play: what happened, every fantasy point it moved (and why), and what it did to your win chance.
+export function playSheetHTML(c) {
+  if (!c) return `<h2 class="sheet-title" id="sheet-title">Play</h2><p>That play isn't here any more.</p>`;
+  const wins = c.wp.filter((w) => Math.abs(w.after - w.before) >= 0.005);
+  return `<h2 class="sheet-title" id="sheet-title">${esc(c.name || c.offense || "")} <span class="plabel">${esc(c.label)}</span></h2>
+    <p class="label num">${esc(c.away)} ${c.awayScore} – ${esc(c.home)} ${c.homeScore} · Q${c.period > 4 ? "OT" : c.period} ${esc(c.clock)}${c.situation ? ` · ${esc(c.situation)}` : ""}</p>
+    <p class="sheet-play">${esc(c.text)}</p>
+    ${c.impacts.map((i) => `<section class="breakdown ${i.owner}">
+      <h3><span>${esc(i.name)} <small>· ${i.owner === "me" ? "your" : "their"} ${esc(i.pos === "DEF" ? "D/ST" : i.pos)}</small></span><b class="num">${i.delta > 0 ? "+" : ""}${n1(i.delta)}</b></h3>
+      <ul>${(i.rows ?? []).map(rowText).join("")}</ul></section>`).join("") || `<p class="sheet-note">No fantasy points moved on this play for your matchup.</p>`}
+    ${wins.map((w) => `<p class="sheet-win num">Your win chance <b>${pct(w.before)} → ${pct(w.after)}</b></p>`).join("")}
+    <div class="sheet-actions">
+      <button class="chipbtn" type="button" data-game="${esc(c.gameId)}">Open ${esc(c.gameName)}</button>
       <button class="chipbtn" type="button" data-close="sheet">Done</button>
     </div>`;
 }
