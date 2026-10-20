@@ -59,7 +59,7 @@ await writeFile(path.join(root, "app/replay.json"), JSON.stringify({
   note: "Every real play of NFL Week 6 (ESPN) with ontopgun's real Sleeper league.",
   user: "ontopgun",
   leagues: [{
-    league: { league_id: league.league_id, name: league.name }, scoring, info: describeLeague(league), opponentName: "marcelolopezm2010", weight: 1,
+    league: { league_id: league.league_id, name: league.name, roster_positions: league.roster_positions }, scoring, info: describeLeague(league), opponentName: "marcelolopezm2010", weight: 1,
     mine: matchups.find((m) => m.roster_id === 1).starters.map(starter),
     theirs: matchups.find((m) => m.roster_id === 7).starters.map(starter),
   }],

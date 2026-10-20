@@ -14,7 +14,7 @@ export async function createLive(fetchJson, { username }) {
     .filter((r) => r.player && r.team && r.player.position !== "DEF")
     .map((r) => ({ id: r.player_id, first: r.player.first_name, last: r.player.last_name, team: r.team, pos: r.player.position }));
   const leagues = data.matchups.map((m) => ({
-    league: { league_id: m.league.league_id, name: m.league.name },
+    league: { league_id: m.league.league_id, name: m.league.name, roster_positions: m.league.roster_positions }, // slots for the lineup
     scoring: m.league.scoring_settings, info: m.info, opponentName: m.opponentName, weight: m.weight,
     mine: m.mine.map(slim), theirs: m.theirs.map(slim),
   }));

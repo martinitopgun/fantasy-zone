@@ -58,6 +58,8 @@ export function createTracker({ leagues, players, games }) {
   const defStats = new Map(); // team -> defensive stat line
   const yardsGained = new Map(); // team -> offensive yards
   const feed = []; // newest first
+  const posById = new Map(players.map((p) => [p.id, p.pos]));
+  let version = 0; // goes up whenever anything changes, so the screen can skip ticks where nothing happened
   const starters = leagues.flatMap((l) => [...l.mine.map((p) => ({ ...p, owner: "me", league: l })), ...l.theirs.map((p) => ({ ...p, owner: "opponent", league: l }))]);
 
   const add = (map, key, k, v) => { const line = map.get(key) ?? {}; line[k] = (line[k] ?? 0) + v; map.set(key, line); };
@@ -115,6 +117,7 @@ export function createTracker({ leagues, players, games }) {
     const cards = [];
     for (const play of fresh) {
       seen.add(play.id);
+      version++;
       const involved = starters.filter((p) => p.team === g.home || p.team === g.away);
       const before = new Map(involved.map((p) => [`${p.league.league.league_id}:${p.owner}:${p.id}`, pointsFor(p, p.league.scoring)]));
       const wpBefore = matchupViews().map((m) => m.winProb);
@@ -123,6 +126,10 @@ export function createTracker({ leagues, players, games }) {
       const kickoff = g.state === "pre"; // a defense's starting bonuses appear on the first play; that isn't news
 
       const a = analyzePlay(play);
+      // Quarter ends, two-minute warnings and finals. ESPN sometimes tags them wrong (ARI@LAR's end of the
+      // 1st quarter came as "End of Half", period 2), so the period and clock only come from the text.
+      const marker = a.kind === "marker", endOfGame = marker && /End of Game/i.test(play.type);
+      const quarterEnd = marker ? /END QUARTER (\d)/i.exec(play.text ?? "") : null;
       const teams = [play.offense, play.offense === g.home ? g.away : g.home].filter(Boolean);
       for (const s of a.stats) {
         const p = resolve(s.name, s.team ? [s.team, ...teams] : teams);
@@ -136,8 +143,8 @@ export function createTracker({ leagues, players, games }) {
       }
 
       // Game state after the play.
-      g.period = play.period;
-      g.clockSec = clockToSec(play.clock);
+      if (!marker) { g.period = play.period; g.clockSec = clockToSec(play.clock); }
+      else if (quarterEnd) { g.period = Number(quarterEnd[1]); g.clockSec = 0; }
       g.homeScore = play.homeScore; g.awayScore = play.awayScore;
       if (a.returnTd) {
         const scorer = g.homeScore - prevHome >= 6 ? g.home : g.awayScore - prevAway >= 6 ? g.away : null;
@@ -158,7 +165,9 @@ export function createTracker({ leagues, players, games }) {
       g.state = /End of Game/i.test(play.type) ? "post" : "in";
       if (g.state === "post") { g.clockSec = 0; g.offense = null; g.downText = null; g.isRedZone = false; }
 
-      if (a.kind === "marker" && !/End of Game|End of Half/i.test(play.type)) continue; // quarter ends and two-minute warnings stay out of the feed
+      // Only halftime and the final get a card. Quarter ends and two-minute warnings stay out of the feed.
+      const halftime = quarterEnd ? quarterEnd[1] === "2" : /End of Half/i.test(play.type);
+      if (marker && !endOfGame && !halftime) continue;
 
       const views = matchupViews();
       const impacts = [];
@@ -168,10 +177,12 @@ export function createTracker({ leagues, players, games }) {
         const delta = pointsFor(p, p.league.scoring) - before.get(key);
         if (Math.abs(delta) >= 0.05) impacts.push({ id: p.id, name: p.name, pos: p.pos, owner: p.owner, league: p.league.league.name, delta });
       }
-      const wp = views.map((m, i) => ({ league: m.league.name, before: wpBefore[i], after: m.winProb }));
+      // A marker card never carries a win move: nothing happened on the field.
+      const wp = views.map((m, i) => ({ league: m.league.name, before: marker ? m.winProb : wpBefore[i], after: m.winProb }));
       const keyPlayer = a.player ? resolve(a.player, teams) : null;
       const passer = a.passer ? resolve(a.passer, teams) : null;
-      const gameSwing = gameWpBefore != null && g.homeWinProb != null ? Math.abs(g.homeWinProb - gameWpBefore) : 0;
+      const gameWpAfter = g.homeWinProb;
+      const gameSwing = !marker && gameWpBefore != null && gameWpAfter != null ? Math.abs(gameWpAfter - gameWpBefore) : 0;
       const card = {
         id: play.id, gameId, gameName: g.name, home: g.home, away: g.away, homeScore: g.homeScore, awayScore: g.awayScore,
         wallclock: play.wallclock, period: play.period, clock: play.clock, situation: play.start?.downText ?? null,
@@ -181,10 +192,11 @@ export function createTracker({ leagues, players, games }) {
         from: a.kind === "catch" && passer ? `from ${passer.first} ${passer.last}` : a.kind === "incomplete" && passer && a.target ? `from ${passer.first} ${passer.last}` : a.kind === "int" && a.by ? `by ${a.by}` : null,
         text: cleanText(play.text),
         impacts, wp, gameSwing, silent,
+        gameWpBefore: marker ? gameWpAfter : gameWpBefore, gameWpAfter, // home team's win chance (ESPN) around the play
         scored: g.homeScore + g.awayScore > prevHome + prevAway,
       };
-      card.big = a.td || a.turnover || (Math.abs(a.yards ?? 0) >= 20 && ["catch", "rush"].includes(a.kind)) || gameSwing >= 0.1
-        || impacts.some((x) => Math.abs(x.delta) >= 4) || wp.some((w) => Math.abs(w.after - w.before) >= 0.05);
+      card.big = !marker && (a.td || a.turnover || (Math.abs(a.yards ?? 0) >= 20 && ["catch", "rush"].includes(a.kind)) || gameSwing >= 0.1
+        || impacts.some((x) => Math.abs(x.delta) >= 4) || wp.some((w) => Math.abs(w.after - w.before) >= 0.05));
       feed.push(card);
       cards.push(card);
     }
@@ -195,17 +207,29 @@ export function createTracker({ leagues, players, games }) {
   // Live mode: the scoreboard knows about kickoffs, finals and the clock between plays.
   function updateGame(gameId, fields) {
     const g = gameMap.get(gameId);
-    if (g) Object.assign(g, fields);
+    if (!g) return;
+    if (Object.entries(fields).some(([k, v]) => g[k] !== v)) version++;
+    Object.assign(g, fields);
   }
 
   return {
     addPlays, updateGame,
+    version: () => version,
     snapshot: () => ({ games: [...gameMap.values()].map((g) => ({ ...g, momentum: undefined })), matchups: matchupViews() }),
     momentum: (id) => gameMap.get(id)?.momentum ?? [],
     feed: () => feed,
+    // A player's stats so far (a copy), for the lineup rows. A defense (id = its team, "KC") gets its
+    // defensive line plus points and yards allowed once its game has started.
+    statLine: (id, pos = posById.get(id)) => {
+      if (pos === "DEF") {
+        const g = gameMap.get(gameByTeam.get(id));
+        return g && g.state !== "pre" ? defenseLine(id, g) : {};
+      }
+      return { ...(stats.get(id) ?? {}) };
+    },
     pointsById: (scoring) => {
       const out = {};
-      for (const [id] of stats) out[id] = fantasyPoints(withBonuses(stats.get(id), players.find((p) => p.id === id)?.pos), scoring);
+      for (const [id, line] of stats) out[id] = fantasyPoints(withBonuses(line, posById.get(id)), scoring);
       for (const g of gameMap.values()) for (const t of [g.home, g.away]) if (g.state !== "pre") out[t] = fantasyPoints(defenseLine(t, g), scoring);
       return out;
     },

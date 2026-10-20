@@ -187,6 +187,39 @@ function explain(game, involved, g) {
   return parts.join(" — ") || "nothing at stake for you";
 }
 
+// The reason in 14 characters or fewer, for a game chip in the rail: the top player at stake's last name,
+// plus "RZ" when his team is in the red zone ("Swift RZ"). With nobody at stake it falls back to the game's
+// own reason ("TEN RZ", "crunch time", "close game"). "RZ" is the only abbreviation; "" when there's nothing.
+export const SHORT_MAX = 14;
+const SUFFIX = /^(jr|sr|ii|iii|iv|v)\.?$/i;
+const GAME_WHY = [[/^(\w+) threatening.*$/, "$1 RZ"], [/^crunch time$/, "crunch time"], [/^upset alert$/, "upset alert"], [/^close game$/, "close game"]];
+
+// "Swift" for D'Andre Swift, "Harrison" for Marvin Harrison Jr., "LAR defense" for a defense.
+export function shortName(p) {
+  if (p?.pos === "DEF") return `${p.nflTeam ?? String(p.name ?? "").split(" ")[0]} defense`;
+  const words = String(p?.name ?? "").trim().split(/\s+/).filter(Boolean);
+  while (words.length > 1 && SUFFIX.test(words.at(-1))) words.pop();
+  return words.at(-1) ?? "";
+}
+// " RZ" when the player's team is in the red zone (rankGames' roleWhy says so), else "".
+export const rzTag = (p) => (/red zone|goal line/i.test(p?.roleWhy ?? "") ? " RZ" : "");
+
+export function shortReason(r) {
+  const top = r?.involved?.[0];
+  if (top) {
+    const tag = rzTag(top);
+    return fit(shortName(top), SHORT_MAX - tag.length) + tag;
+  }
+  const bits = String(r?.gameWhy ?? "").split(", ");
+  for (const [re, out] of GAME_WHY) {
+    const b = bits.find((x) => re.test(x));
+    if (b) return fit(b.replace(re, out), SHORT_MAX);
+  }
+  return "";
+}
+
+const fit = (s, n) => (s.length <= n ? s : `${s.slice(0, n - 1)}…`);
+
 // ---------- Big-play pop-ups (compare two snapshots a few seconds apart) ----------
 
 export function detectBigPlays(before, after, { matchupsBefore = [], matchupsAfter = [] } = {}) {

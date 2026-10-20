@@ -1,67 +1,431 @@
-// Fantasy Zone app.
+// Fantasy Zone app: the shell (app bar, tabs you swipe between, or columns on a wide screen), the two data
+// sources, and the update loop.
 //   live    when served by server.js (npm start): Sleeper + ESPN play-by-play every 10 seconds
 //   replay  anywhere else: every real play of NFL Week 6, at the speed it happened or faster (replay.json)
-// Nothing on screen switches by itself: the Zone feed fills in, the hot games re-rank, and you choose.
+// Nothing on screen switches by itself: live data only changes what's inside the pages. Tabs, games,
+// columns and scroll positions change only when you tap or swipe.
 
 import { rankGames, DIALS } from "./src/model.js";
-import { createReplay } from "./src/replay.js";
+import { createReplay, windows } from "./src/replay.js";
+import { columnsFor, visibleTabs, nearTabs, nextSpeed, SPEEDS } from "./src/view-models.js";
+import { createPager } from "./ui/pager.js";
+import { H, createSheet, createLayers } from "./ui/layers.js";
+import { createAppbar } from "./views/appbar.js";
+import { clockSheetHTML, refreshClockSheet, liveSheetHTML, findSheetHTML, settingsSheetHTML, setupHTML } from "./views/sheets.js";
+import { createZoneView } from "./views/zone.js";
+import { createMatchupView } from "./views/matchup.js";
+import { createGamesView } from "./views/games.js";
+import { createGameLayer } from "./views/game.js";
+import { createRail } from "./ui/rail.js";
 
 const POLL_MS = 10_000;
 const TICK_MS = 250;
-const FEED_PAGE = 150;
-const ELSEWHERE_MS = 25_000;
 const REPLAY_START = Date.parse("2026-10-18T16:57:00Z"); // just before the 1 PM ET kickoffs
-const ET = { timeZone: "America/New_York" };
 
 const $ = (sel) => document.querySelector(sel);
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const store = {
   get(k, d) { try { const v = localStorage.getItem(`fz:${k}`); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(`fz:${k}`, JSON.stringify(v)); } catch { /* storage unavailable */ } },
 };
-const wide = () => matchMedia("(min-width: 1000px)").matches;
-const pct = (x) => (x > 0.99 && x < 1 ? ">99%" : x < 0.01 && x > 0 ? "<1%" : `${Math.round(x * 100)}%`);
-const n1 = (x) => (Math.round(x * 10) / 10).toFixed(1);
-const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
 const ui = {
   mode: null, hasServer: false,
-  screen: "zone", // "zone" | "game" | "games"
-  gameId: null, // game open on the game screen (phones)
-  panelId: null, // game in the side panel (wide screens); only changes when you pick one
+  // where you are
+  tab: null, tabIds: [], pages: {}, scroll: {}, cols: null, pick: store.get("pick", null), fantasyOn: true,
+  // replay controls and the Zone filter
   filter: store.get("filter", "mine"),
-  speed: store.get("speed", 1),
+  speed: SPEEDS.includes(store.get("speed", 1)) ? store.get("speed", 1) : 1, paused: false,
   username: store.get("username", null),
-  tracker: null, replay: null, replayData: null, live: null,
-  feedLimit: FEED_PAGE, newCount: 0,
-  elsewhere: null,
+  // data
+  tracker: null, replay: null, replayData: null, live: null, error: null, updatedAt: 0, connecting: false,
+  // the update pipeline (plan B1.10)
+  seen: -1, dirty: false, pending: [], missed: {}, stale: new Set(),
   lastWp: new Map(), wpDelta: new Map(),
-  error: null, updatedAt: 0, wasWide: wide(),
+  wantGame: null,
+  // what's open on top (plan B1.5): ui.stack / ui.depth are kept by ui/layers.js
+  gameOrder: [], // the games ‹ › step through, frozen when a game opens
 };
+
+// ---------- Shell ----------
+
+const shell = $("#shell"), tabbar = $("#tabbar"), pagerEl = $("#pager"), main = $("#main"), boot = $("#boot"), layerEl = $("#layer");
+const appbar = createAppbar({ el: $("#appbar"), ui });
+// Layers and sheets share one stack with Back-button steps. Forward (to a layer's step) reopens it from the address.
+const layers = createLayers({ ui, onForward: (hash, st) => (st?.sheet ? SHEETS[st.sheet] && openSheet(st.sheet) : route(hash, { smooth: false })) });
+const sheet = createSheet({ sheet: $("#sheet"), backdrop: $("#backdrop"), others: () => [$("#appbar"), $("#pinbar"), $("#rail"), tabbar, main, layerEl], onDismiss: () => closeSheet() });
+const gameLayer = createGameLayer({ el: layerEl, ui, order: () => ui.gameOrder });
+// The game chips between the app bar and the tabs. Their order only changes on a jump, Live/Replay or ↻.
+const rail = createRail({ el: $("#rail"), getCtx: () => (ui.tracker ? lazyCtx() : null), current: () => gameLayer.id, now: () => ui.replay?.time ?? Date.now() });
+const views = {
+  zone: createZoneView({ ui, store }),
+  matchup: createMatchupView({ ui }),
+  games: createGamesView({ ui, store, getCtx: () => lazyCtx() }),
+};
+
+// The tabs, in order. Later: League (needs league data). The same list becomes the phone app's tabs.
+const TABS = [
+  { id: "zone", label: "Zone", view: views.zone },
+  { id: "matchup", label: "Matchup", view: views.matchup, fantasy: true },
+  { id: "games", label: "Games", view: views.games },
+];
+const tabOf = (id) => TABS.find((t) => t.id === id);
+let mainPager = null;
+
+// Snapshot and ranking, worked out once per update and only if something asks for them.
+function lazyCtx() {
+  let snap, ranked;
+  return {
+    get snap() { return (snap ??= ui.tracker.snapshot()); },
+    get ranked() { return (ranked ??= rankGames({ games: this.snap.games, matchups: this.snap.matchups, dials: ui.fantasyOn ? DIALS.fantasyOn : DIALS.fantasyOff })); },
+  };
+}
+
+// Build (or rebuild) the tab bar and pages from the visible tabs (plan B1.1). Pages of hidden tabs are kept,
+// so they come back with their scroll spot.
+function buildTabs() {
+  const tabs = visibleTabs(TABS, { fantasyOn: ui.fantasyOn });
+  const ids = tabs.map((t) => t.id);
+  if (mainPager && ids.join() === ui.tabIds.join()) return;
+  const before = ui.tabIds;
+
+  for (const b of tabbar.querySelectorAll('[role="tab"]')) b.remove();
+  const ink = tabbar.querySelector(".ink");
+  const buttons = tabs.map((t) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.id = `tab-${t.id}`; b.textContent = t.label;
+    b.setAttribute("role", "tab"); b.setAttribute("aria-controls", `page-${t.id}`); b.setAttribute("aria-selected", "false");
+    b.tabIndex = -1;
+    tabbar.insertBefore(b, ink);
+    return b;
+  });
+
+  for (const t of TABS) if (!ids.includes(t.id)) ui.pages[t.id]?.remove();
+  const pages = tabs.map((t) => {
+    let pg = ui.pages[t.id];
+    if (!pg) {
+      pg = document.createElement("section");
+      pg.className = "page"; pg.id = `page-${t.id}`;
+      pg.setAttribute("role", "tabpanel"); pg.setAttribute("aria-labelledby", `tab-${t.id}`);
+      ui.pages[t.id] = pg;
+      watchPage(pg, t.id);
+      t.view.mount(pg);
+      if (ui.tracker) t.view.reset(lazyCtx());
+    } else if (!before.includes(t.id)) ui.stale.add(t.id); // back from hidden: catch up when in reach
+    pagerEl.appendChild(pg);
+    return pg;
+  });
+  ui.tabIds = ids;
+  restorePageScroll();
+
+  mainPager?.destroy();
+  mainPager = createPager({ tabbar, pager: pagerEl, tabs: buttons, pages, onSettle, onReselect });
+  const keep = ids.includes(ui.tab) ? ui.tab : "zone";
+  if (ui.tab && keep !== ui.tab) setHash("zone");
+  mainPager.start(ids.indexOf(keep));
+  layoutColumns();
+}
+
+// ---------- Scroll memory (plan B1.7) ----------
+// Each page remembers what was at its top: the first card or tile showing and how far down it sat (or just
+// "the very top"). It's written after you stop scrolling, never right after a resize (whose squeezed scroll
+// positions would overwrite it), and put back whenever a page changes size, gets a column, or comes back.
+const KEYED = "[data-id], .tile[data-game]";
+const shown = (pg) => pg?.isConnected && pg.getClientRects().length > 0;
+const headBottom = (pg) => pg.getBoundingClientRect().top + (pg.querySelector(".page-head")?.offsetHeight ?? 0);
+
+function recordScroll(id) {
+  const pg = ui.pages[id];
+  if (!shown(pg) || performance.now() - (pg._resizedAt ?? 0) < 250) return;
+  if (pg.scrollTop < 24) { ui.scroll[id] = { top: 0 }; return; }
+  const base = headBottom(pg);
+  for (const el of pg.querySelectorAll(KEYED)) {
+    const r = el.getBoundingClientRect();
+    if (r.bottom <= base) continue;
+    const key = el.dataset.id ? `[data-id="${CSS.escape(el.dataset.id)}"]` : `[data-game="${CSS.escape(el.dataset.game)}"]`;
+    ui.scroll[id] = { top: pg.scrollTop, key, offset: r.top - base };
+    return;
+  }
+  ui.scroll[id] = { top: pg.scrollTop };
+}
+
+function restoreScroll(id) {
+  const pg = ui.pages[id], m = ui.scroll[id];
+  if (!m || !shown(pg)) return;
+  const el = m.key && pg.querySelector(m.key);
+  const want = el ? pg.scrollTop + (el.getBoundingClientRect().top - headBottom(pg)) - m.offset : m.top;
+  if (Math.abs(pg.scrollTop - want) >= 1) pg.scrollTop = want;
+}
+function restorePageScroll() { for (const id of ui.tabIds) restoreScroll(id); }
+
+const pageRO = new ResizeObserver((entries) => {
+  for (const e of entries) { e.target._resizedAt = performance.now(); restoreScroll(e.target.dataset.tab); }
+});
+function watchPage(pg, id) {
+  pg.dataset.tab = id;
+  pageRO.observe(pg);
+  pg.addEventListener("scroll", () => { clearTimeout(pg._st); pg._st = setTimeout(() => recordScroll(id), 120); }, { passive: true });
+}
+
+// Tabs replace the address (#zone, #matchup, #games), so Back never steps through tabs. While something is open
+// on top, the address belongs to it and is left alone.
+function setHash(id) { if (!ui.stack.length) H.replace(`#${id}`); }
+
+// A page became the current tab (swipe, tap, key, or start).
+function onSettle(i, { swipe } = {}) {
+  const id = ui.tabIds[i];
+  const changed = id !== ui.tab;
+  ui.tab = id;
+  setHash(id);
+  if (swipe && changed) $("#announce").textContent = `${tabOf(id).label} tab`;
+  const ctx = ui.tracker ? lazyCtx() : null;
+  if (changed && ctx) tabOf(id).view.activate?.(ctx); // e.g. Games re-sorts when you arrive
+  catchUp(ctx);
+}
+
+function onReselect(i) {
+  const pg = ui.pages[ui.tabIds[i]];
+  pg?.scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+}
+
+// Pages that just came into reach get what they missed.
+function catchUp(ctx = ui.tracker ? lazyCtx() : null) {
+  if (!ctx || !mainPager) return;
+  for (const id of nearTabs(ui.tabIds, mainPager.active, ui.cols)) {
+    if (!ui.stale.has(id)) continue;
+    ui.stale.delete(id);
+    const missed = ui.missed[id] ?? [];
+    delete ui.missed[id];
+    tabOf(id).view.update(ctx, missed);
+  }
+}
+
+// Show a tab: swipe the pager there, or on a wide screen make sure it has a column.
+function selectTab(id, { focus = false, smooth = true } = {}) {
+  if (!ui.tabIds.includes(id)) return;
+  if (ui.cols && !ui.cols.includes(id)) { ui.pick = id; store.set("pick", id); layoutColumns(); }
+  mainPager.go(ui.tabIds.indexOf(id), smooth);
+  if (focus) (ui.cols ? ui.pages[id].querySelector(".coltitle") : tabbar.querySelector(`#tab-${id}`))?.focus({ preventScroll: true });
+}
+
+// ---------- Wide screens: columns (plan B1.8) ----------
+
+const mq2 = matchMedia("(min-width: 900px)"), mq3 = matchMedia("(min-width: 1200px)");
+
+function layoutColumns() {
+  const want = mq3.matches ? 3 : mq2.matches ? 2 : 1;
+  const prev = ui.cols;
+  ui.cols = want > 1 ? columnsFor(want, ui.tabIds, ui.pick) : null;
+  shell.classList.toggle("dash", !!ui.cols);
+  shell.style.setProperty("--cols", String(ui.cols?.length ?? 1));
+  for (const id of ui.tabIds) {
+    const pg = ui.pages[id], c = ui.cols?.indexOf(id) ?? -1;
+    if (c >= 0) pg.dataset.col = String(c + 1); else delete pg.dataset.col;
+    pg.setAttribute("role", ui.cols ? "region" : "tabpanel");
+    pg.setAttribute("aria-labelledby", ui.cols ? `col-${id}` : `tab-${id}`);
+  }
+  renderColumnHeads();
+  mainPager.setEnabled(!ui.cols);
+  if (!ui.cols && prev) mainPager.go(Math.max(0, ui.tabIds.indexOf(ui.tab)), false);
+  restorePageScroll();
+  placeLayer();
+  // A tab that just got a column counts as arriving there (Games re-sorts), then everything in view catches up.
+  if (ui.tracker && ui.cols) {
+    const ctx = lazyCtx();
+    for (const id of ui.cols) if (!prev?.includes(id)) tabOf(id).view.activate?.(ctx);
+    catchUp(ctx);
+  }
+}
+
+// Column 2 gets a picker when more than one tab can go there.
+function renderColumnHeads() {
+  const choices = !ui.cols ? [] : ui.cols.length === 3 ? ui.tabIds.filter((id) => ["matchup", "league"].includes(id)) : ui.tabIds.filter((id) => id !== "zone");
+  for (const id of ui.tabIds) {
+    const slot = ui.pages[id].querySelector(".colpick-slot");
+    if (!slot) continue;
+    const html = ui.cols && ui.cols[1] === id && choices.length > 1
+      ? `<span class="seg colpick" role="group" aria-label="Show in this column">${choices.map((c) => `<button type="button" data-pick="${c}" aria-pressed="${c === id}">${tabOf(c).label}</button>`).join("")}</span>`
+      : "";
+    if (slot._h !== html) slot.innerHTML = slot._h = html;
+  }
+}
+
+mq2.addEventListener("change", layoutColumns);
+mq3.addEventListener("change", layoutColumns);
+
+// ---------- Layers and sheets (plan B1.5) ----------
+
+// The games ‹ › step through: the live ones in the order the game chips show, frozen while the game is open.
+// The open game goes first when it isn't live (a final from the Games grid), so ‹ › still lead somewhere.
+function freezeOrder(ctx, id) {
+  const live = new Set(ctx.snap.games.filter((g) => g.state === "in").map((g) => g.id));
+  const fromRail = rail.order.filter((g) => live.has(g));
+  for (const r of ctx.ranked) if (live.has(r.game.id) && !fromRail.includes(r.game.id)) fromRail.push(r.game.id);
+  return fromRail.includes(id) ? fromRail : [id, ...fromRail];
+}
+
+// Open a game on top (a play card, a game chip or tile, a link). With a game already open, switch to the new
+// one in place: same Back step (H.replace), same ‹ › order. Returns false when there's no such game.
+function openGame(id) {
+  if (!ui.tracker) return false;
+  const ctx = lazyCtx();
+  if (!ctx.snap.games.some((g) => g.id === id)) return false;
+  if (layers.top()?.kind === "sheet") { layers.back(() => openGame(id)); return true; } // a sheet goes first
+  if (gameLayer.id) {
+    if (id === gameLayer.id) return true;
+    if (!ui.gameOrder.includes(id)) ui.gameOrder = freezeOrder(ctx, id);
+    gameLayer.open(id, ctx);
+    H.replace(`#game/${id}`);
+    rail.markCurrent();
+    return true;
+  }
+  ui.gameOrder = freezeOrder(ctx, id);
+  const opener = document.activeElement;
+  layers.open({
+    kind: "game",
+    show() {
+      gameLayer.open(id, ctx);
+      layerEl.classList.remove("opening"); void layerEl.offsetWidth; layerEl.classList.add("opening");
+      placeLayer();
+      rail.markCurrent();
+      layerEl.querySelector(".back")?.focus({ preventScroll: true });
+    },
+    hide() {
+      gameLayer.close();
+      placeLayer();
+      rail.markCurrent();
+      setHash(ui.tab); // matters only when the layer had no Back step of its own
+      const back = opener?.isConnected && !opener.closest("[inert]") && opener.getClientRects().length ? opener
+        : ui.cols ? ui.pages[ui.cols.at(-1)]?.querySelector(".coltitle") : tabbar.querySelector('[aria-selected="true"]');
+      back?.focus({ preventScroll: true });
+    },
+  }, `#game/${id}`);
+  return true;
+}
+
+// ‹ › in the game's head, and the [ ] keys.
+function stepGame(dir) {
+  const to = layerEl.querySelector(`[data-step="${dir}"]`)?.dataset.to;
+  if (to) openGame(to);
+}
+
+// Close the game (‹, ×, Esc): through Back when it has a Back step, so the browser's Back stays in step.
+function closeGame() { if (gameLayer.id && layers.top()?.kind === "game") layers.back(); }
+
+function openSheet(kind) {
+  if (kind === "clock" && !ui.replay) return;
+  const html = SHEETS[kind]();
+  const entry = { kind: "sheet", state: { sheet: kind }, show: () => sheet.open(kind, html), hide: () => sheet.close() };
+  if (layers.top()?.kind === "sheet") layers.swapTop(entry); else layers.open(entry);
+}
+function closeSheet(then) { if (layers.top()?.kind === "sheet") layers.back(then); else then?.(); }
+
+// On a phone the layer covers the tabs and pages; on a wide screen only the last column.
+function placeLayer() {
+  const open = !!gameLayer.id;
+  tabbar.inert = open && !ui.cols;
+  main.inert = open && !ui.cols;
+  if (ui.cols) for (const id of ui.cols) ui.pages[id].inert = open && id === ui.cols.at(-1);
+}
+
+// ---------- Update loop (plan B1.10) ----------
+
+// Every replay tick (250 ms) or live poll (10 s).
+function tick(cards) {
+  appbar.renderTransport();
+  if (sheet.kind === "clock" && ui.replay) refreshClockSheet(sheet.body, ui);
+  if (!ui.tracker) return;
+  const v = ui.tracker.version();
+  if (v !== ui.seen) {
+    ui.seen = v;
+    ui.pending.push(...cards.filter((c) => !c.silent));
+    ui.dirty = true;
+  }
+  if (!ui.dirty || mainPager.state.swiping || document.hidden) return; // never write mid-swipe
+  flush();
+}
+
+function flush() {
+  ui.dirty = false;
+  if (!ui.tracker) return;
+  const ctx = lazyCtx();
+  trackWp(ctx.snap);
+  appbar.update(ctx);
+  rail.update(ctx);
+  const near = new Set(nearTabs(ui.tabIds, mainPager.active, ui.cols));
+  for (const id of ui.tabIds) {
+    if (near.has(id) && !ui.stale.has(id)) tabOf(id).view.update(ctx, ui.pending);
+    else { (ui.missed[id] ??= []).push(...ui.pending); ui.stale.add(id); }
+  }
+  catchUp(ctx);
+  if (gameLayer.id) gameLayer.update(ctx, ui.pending);
+  ui.pending = [];
+}
+
+// Win chance before the last move, for the ▲▼ next to it.
+function trackWp(snap) {
+  for (const m of snap.matchups) {
+    const id = m.league.league_id, prev = ui.lastWp.get(id);
+    if (prev != null && Math.abs(m.winProb - prev) >= 0.005) ui.wpDelta.set(id, m.winProb - prev);
+    if (prev == null || Math.abs(m.winProb - prev) >= 0.005) ui.lastWp.set(id, m.winProb);
+  }
+}
+
+// New data from scratch (replay start or jump, live connected): every page starts over.
+function resetAll() {
+  ui.seen = ui.tracker.version(); ui.dirty = false;
+  ui.pending = []; ui.missed = {}; ui.stale.clear();
+  ui.lastWp.clear(); ui.wpDelta.clear();
+  const ctx = lazyCtx();
+  trackWp(ctx.snap);
+  appbar.update(ctx);
+  rail.reset(ctx);
+  for (const t of TABS) if (ui.pages[t.id]) t.view.reset(ctx);
+  if (!gameLayer.reset(ctx)) layers.closeAll(); // the open game keeps its place, with fresh plays
+  placeLayer();
+  appbar.renderTransport();
+  if (ui.wantGame) {
+    const id = ui.wantGame; ui.wantGame = null;
+    if (!openGame(id)) views.zone.note("That game isn't in this replay.");
+  }
+}
+
+document.addEventListener("visibilitychange", () => { if (!document.hidden && ui.dirty) flush(); });
 
 // ---------- Data sources ----------
 
+function stop() { clearInterval(ui.timer); ui.timer = null; }
+
+function showBoot(html) { boot.innerHTML = html; boot.hidden = false; shell.classList.add("booting"); }
+function hideBoot() { boot.hidden = true; boot.innerHTML = ""; shell.classList.remove("booting"); }
+
 async function startReplay() {
-  ui.mode = "replay";
-  ui.replayData ??= await (await fetch("replay.json")).json();
+  if (ui.stack.length) return layers.closeAll(() => startReplay());
+  stop();
+  ui.mode = "replay"; ui.live = null; ui.error = null;
+  if (!ui.replayData) {
+    showBoot(`<p class="empty">Loading the replay…</p>`);
+    try { ui.replayData = await (await fetch("replay.json")).json(); }
+    catch (e) { showBoot(`<p class="empty">Couldn't load the replay: ${e.message}</p>`); return; }
+  }
   ui.replay = createReplay(ui.replayData, { startAt: REPLAY_START });
   ui.tracker = ui.replay.tracker;
-  render();
+  hideBoot();
+  resetAll();
   let last = performance.now();
-  clearInterval(ui.timer);
   ui.timer = setInterval(() => {
     const now = performance.now();
-    const cards = ui.replay.advance(now - last, ui.speed);
+    const dt = now - last;
     last = now;
-    update(cards);
+    tick(ui.paused || ui.replay.done ? [] : ui.replay.advance(dt, ui.speed)); // the clock stops at the last saved play
   }, TICK_MS);
 }
 
 async function startLive() {
-  ui.mode = "live";
-  clearInterval(ui.timer);
-  ui.tracker = null; ui.error = null;
-  render();
+  if (ui.stack.length) return layers.closeAll(() => startLive());
+  stop();
+  ui.mode = "live"; ui.tracker = null; ui.replay = null; ui.error = null; ui.updatedAt = 0; ui.connecting = true;
+  appbar.clear(); appbar.renderTransport(); rail.clear();
+  showBoot(`<p class="empty">Connecting to Sleeper and ESPN…</p>`);
   try {
     const [{ makeFetchJson }, { createLive }] = await Promise.all([import("./src/net.js"), import("./src/live.js")]);
     const fetchJson = makeFetchJson({ rewrite: (u) => u.replace("https://api.sleeper.app", "/proxy/sleeper").replace("https://site.api.espn.com", "/proxy/espn") });
@@ -69,370 +433,30 @@ async function startLive() {
     await ui.live.poll(); // what already happened today, quietly
     ui.tracker = ui.live.tracker;
     ui.updatedAt = Date.now();
-    render();
   } catch (e) {
-    ui.error = e.message;
+    ui.error = e.message; ui.connecting = false;
     if (/No Sleeper user/.test(e.message)) { ui.username = null; store.set("username", null); }
-    render();
-    return;
+    return showSetup();
   }
+  ui.error = null; ui.connecting = false;
+  hideBoot();
+  resetAll();
   ui.timer = setInterval(async () => {
     try {
       const cards = await ui.live.poll();
       ui.error = null; ui.updatedAt = Date.now();
-      update(cards);
-    } catch (e) { ui.error = e.message; renderHeader(); }
+      tick(cards);
+    } catch (e) { ui.error = e.message; appbar.renderTransport(); }
   }, POLL_MS);
 }
 
-// ---------- Screens ----------
-
-function go(screen, gameId) {
-  if (screen === "game" && wide()) { ui.panelId = gameId; screen = "zone"; }
-  ui.screen = screen;
-  if (gameId) ui.gameId = gameId;
-  ui.feedLimit = FEED_PAGE;
-  render();
-  if (screen !== "zone" || !wide()) window.scrollTo({ top: 0 });
-}
-
-function snapshot() { return ui.tracker.snapshot(); }
-
-function ranked(snap) {
-  return rankGames({ games: snap.games, matchups: snap.matchups, dials: DIALS.fantasyOn });
-}
-
-// Full render of the current screen (on navigation, filter change, replay jump).
-function render() {
-  renderHeader();
-  renderReplayBar();
-  const root = $("#root");
-  if (ui.mode === "live" && !ui.tracker) {
-    if (!ui.username) return renderSetup(root);
-    root.innerHTML = `<p class="empty">${ui.error ? `Couldn't connect: ${esc(ui.error)}` : "Connecting to Sleeper and ESPN…"}</p>`;
-    return;
-  }
-  if (!ui.tracker) return;
-  const snap = snapshot();
-  const r = ranked(snap);
-  if (ui.screen === "games") root.innerHTML = allGamesHTML(r);
-  else if (ui.screen === "game") {
-    root.innerHTML = `<div class="zone"><div id="elsewhere"></div><section class="game" id="panel">${panelHTML(ui.gameId, snap)}</section></div>`;
-    renderElsewhere();
-  } else {
-    const split = wide();
-    if (split && !ui.panelId) ui.panelId = (r.find((x) => x.game.state === "in") ?? r.find((x) => x.game.state === "pre") ?? r[0])?.game.id;
-    root.innerHTML = `<div class="zone ${split ? "split" : ""}">
-      <div class="col">
-        <div id="matchup">${matchupHTML(snap)}</div>
-        <section class="col" style="gap:8px"><div class="hot-head"><span class="label">Hot right now</span>
-          <button class="linkbtn" type="button" data-nav="games">All games ›</button></div>
-          <div class="strip" id="hot">${hotHTML(r)}</div></section>
-        <div class="filters" role="group" aria-label="Which plays">
-          ${[["mine", "My matchup"], ["all", "All plays"], ["big", "Big plays"]].map(([k, l]) => `<button class="chipbtn" type="button" data-filter="${k}" aria-pressed="${ui.filter === k}">${l}</button>`).join("")}
-        </div>
-        <div class="feed" id="feed">${feedHTML(zoneCards())}</div>
-      </div>
-      ${split ? `<aside class="deskpanel"><section class="game" id="panel">${panelHTML(ui.panelId, snap)}</section></aside>` : ""}
-    </div>`;
-  }
-  ui.newCount = 0;
-  updateNewPill();
-}
-
-// Small update after each tick or poll: new cards slide in, scores and tiles refresh.
-function update(cards) {
-  if (!ui.tracker) return;
-  const fresh = cards.filter((c) => !c.silent);
-  for (const c of fresh) {
-    const viewing = ui.screen === "game" ? ui.gameId : wide() ? ui.panelId : null;
-    if (c.big && c.gameId !== viewing && c.impacts.some((i) => i.pos !== "DEF")) ui.elsewhere = { card: c, at: Date.now() };
-  }
-  if (ui.screen === "games") {
-    if (fresh.length || !ui.lastGamesRender || Date.now() - ui.lastGamesRender > 1000) {
-      $("#root").innerHTML = allGamesHTML(ranked(snapshot()));
-      ui.lastGamesRender = Date.now();
-    }
-    renderHeader(); updateReplayClock();
-    return;
-  }
-  const snap = snapshot();
-  if (ui.screen === "zone") {
-    $("#matchup").innerHTML = matchupHTML(snap);
-    $("#hot").innerHTML = hotHTML(ranked(snap));
-    const add = fresh.filter(passesFilter).reverse(); // newest first
-    if (add.length) {
-      const feed = $("#feed");
-      feed.querySelector(".empty")?.remove();
-      feed.insertAdjacentHTML("afterbegin", add.map((c) => cardHTML(c, true)).join(""));
-      const feedTop = feed.getBoundingClientRect().top + window.scrollY;
-      if (window.scrollY > feedTop + 80) { ui.newCount += add.length; updateNewPill(); }
-    }
-  }
-  const panelGame = ui.screen === "game" ? ui.gameId : wide() ? ui.panelId : null;
-  if (panelGame && $("#panel")) {
-    $("#panel-top").innerHTML = panelTopHTML(panelGame, snap);
-    const add = fresh.filter((c) => c.gameId === panelGame).reverse();
-    if (add.length) {
-      const pf = $("#panel-feed");
-      pf.querySelector(".empty")?.remove();
-      pf.insertAdjacentHTML("afterbegin", add.map((c) => cardHTML(c, true)).join(""));
-    }
-  }
-  if (ui.screen === "game") renderElsewhere();
-  renderHeader();
-  updateReplayClock();
-}
-
-// ---------- Pieces ----------
-
-function zoneCards() { return ui.tracker.feed().filter(passesFilter); }
-
-function passesFilter(c) {
-  if (ui.filter === "mine") return c.impacts.length > 0;
-  if (ui.filter === "big") return c.big;
-  return true;
-}
-
-function feedHTML(list, emptyText) {
-  if (!list.length) {
-    return `<p class="empty">${esc(emptyText ?? (ui.filter === "mine" ? "No plays for your matchup yet. They show up here the moment your players or your opponent's touch the ball." : "No plays yet. Kickoff is coming."))}</p>`;
-  }
-  const shown = list.slice(0, ui.feedLimit);
-  return shown.map((c) => cardHTML(c, false)).join("") + (list.length > shown.length ? `<button class="more" type="button" data-more>Show older plays (${list.length - shown.length})</button>` : "");
-}
-
-function cardHTML(c, isNew) {
-  if (c.kind === "marker" || c.kind === "timeout") {
-    const what = c.kind === "timeout" ? c.text.replace(/\.$/, "") : /END GAME/i.test(c.text) ? "Final" : /QUARTER 2/i.test(c.text) ? "Halftime" : c.text.replace(/\.$/, "");
-    return `<div class="marker">${esc(c.gameName)} · ${esc(what)}${c.kind === "marker" ? ` · ${esc(c.away)} ${c.awayScore}–${c.homeScore} ${esc(c.home)}` : ""}</div>`;
-  }
-  const mine = c.impacts.filter((i) => i.owner === "me"), theirs = c.impacts.filter((i) => i.owner === "opponent");
-  const sum = (l) => l.reduce((s, i) => s + Math.abs(i.delta), 0);
-  const owner = sum(mine) || sum(theirs) ? (sum(mine) >= sum(theirs) ? "me" : "opponent") : "";
-  const homeLeads = c.homeScore > c.awayScore, awayLeads = c.awayScore > c.homeScore;
-  const side = (t, s, lead) => (lead ? `<b>${esc(t)} ${s}</b>` : `${esc(t)} ${s}`);
-  const score = `<span class="score">${side(c.away, c.awayScore, awayLeads)} – ${side(c.home, c.homeScore, homeLeads)}</span>`;
-  const chips = [
-    ...c.impacts.map((i) => `<span class="chip ${i.owner}">${i.delta > 0 ? "+" : ""}${n1(i.delta)} · ${i.owner === "me" ? "your" : "opp"} ${esc(i.pos === "DEF" ? "D/ST" : i.pos)}</span>`),
-    ...c.wp.filter((w) => Math.abs(w.after - w.before) >= 0.005).map((w) => `<span class="chip ${w.after > w.before ? "up" : "down"}">Win ${pct(w.before)} → ${pct(w.after)}</span>`),
-  ];
-  const name = c.name || c.offense || "";
-  return `<article class="play ${owner} ${c.big ? "big" : ""} ${isNew ? "new" : ""}" data-game="${esc(c.gameId)}" tabindex="0" role="button" aria-label="${esc(`${name} ${c.label}, ${c.gameName}`)}">
-    <div class="pmeta">${score}<span>· Q${c.period > 4 ? "OT" : c.period} ${esc(c.clock)}</span>${c.situation ? `<span>· ${esc(c.situation)}</span>` : ""}</div>
-    <div class="phead"><span class="pname">${esc(name)}</span><span class="plabel">${esc(c.label)}</span>${c.td ? `<span class="badge">TD</span>` : c.turnover ? `<span class="badge">Turnover</span>` : ""}</div>
-    ${c.from ? `<div class="pfrom">${esc(c.from)}</div>` : ""}
-    <div class="ptext">${esc(c.text)}</div>
-    ${chips.length ? `<div class="pchips">${chips.join("")}</div>` : ""}
-  </article>`;
-}
-
-function matchupHTML(snap) {
-  return snap.matchups.map((m) => {
-    const id = m.league.league_id;
-    const prev = ui.lastWp.get(id);
-    if (prev != null && Math.abs(m.winProb - prev) >= 0.005) ui.wpDelta.set(id, m.winProb - prev);
-    if (prev == null || Math.abs(m.winProb - prev) >= 0.005) ui.lastWp.set(id, m.winProb);
-    const d = ui.wpDelta.get(id);
-    const delta = d ? ` <span class="delta ${d > 0 ? "up" : "down"}">${d > 0 ? "▲" : "▼"}${Math.max(1, Math.round(Math.abs(d) * 100))}</span>` : "";
-    return `<article class="matchup" aria-label="${esc(m.league.name)} matchup">
-      <div class="top">
-        <div class="side me"><span class="who">You</span><span class="pts num">${n1(m.myNow)}</span><span class="who num">proj ${n1(m.myFinal)}</span></div>
-        <div class="mid"><span class="label">Win chance</span><b class="num">${pct(m.winProb)}${delta}</b></div>
-        <div class="side opp"><span class="who">${esc(m.opponentName)}</span><span class="pts num">${n1(m.oppNow)}</span><span class="who num">proj ${n1(m.oppFinal)}</span></div>
-      </div>
-      <div class="wpbar"><span style="width:${(m.winProb * 100).toFixed(1)}%"></span></div>
-      <div class="label">${esc(m.league.name)} · ${esc(m.info.format)}</div>
-    </article>`;
-  }).join("");
-}
-
-function hotHTML(r) {
-  const live = r.filter((x) => x.game.state === "in");
-  const next = r.filter((x) => x.game.state === "pre").sort((a, b) => a.game.kickoff.localeCompare(b.game.kickoff));
-  const list = [...live, ...next].slice(0, 3);
-  return list.length ? list.map(tileHTML).join("") : `<p class="empty">No games left today.</p>`;
-}
-
-function tileHTML(x) {
-  const g = x.game;
-  const hot = g.state === "in" && x.live >= 2;
-  const showScore = g.state !== "pre";
-  const meta = g.state === "pre" ? `Kickoff ${kickoffText(g)}` : g.state === "post" ? "Final" : `Q${g.period > 4 ? "OT" : g.period} ${clock(g.clockSec)}${g.downText ? ` · ${g.downText}` : ""}`;
-  return `<button class="tile ${hot ? "hot" : ""} ${wide() && g.id === ui.panelId && ui.screen === "zone" ? "active" : ""}" type="button" data-game="${esc(g.id)}">
-    <div class="row"><span class="teams num">${esc(g.away)}${showScore ? ` ${g.awayScore}` : ""} <span class="at">@</span> ${esc(g.home)}${showScore ? ` ${g.homeScore}` : ""}</span>
-      ${hot ? `<span class="flame">🔥 Hot</span>` : ""}</div>
-    <div class="meta num">${esc(meta)}</div>
-    ${g.state !== "post" ? `<div class="meter" title="Watch score ${Math.round(x.watch)}"><span style="width:${Math.min(100, x.watch)}%"></span></div>` : ""}
-    <div class="why">${esc(x.reason)}</div>
-  </button>`;
-}
-
-function allGamesHTML(r) {
-  const live = r.filter((x) => x.game.state === "in");
-  const pre = r.filter((x) => x.game.state === "pre").sort((a, b) => a.game.kickoff.localeCompare(b.game.kickoff));
-  const post = r.filter((x) => x.game.state === "post");
-  const section = (title, list) => (list.length ? `<section class="col" style="gap:8px"><span class="label">${title}</span><div class="grid">${list.map(tileHTML).join("")}</div></section>` : "");
-  return `<div class="allgames">${section("Live, most important first", live)}${section("Coming up", pre)}${section("Final", post)}</div>`;
-}
-
-function panelHTML(gameId, snap) {
-  const cards = ui.tracker.feed().filter((c) => c.gameId === gameId);
-  return `<div id="panel-top" class="col">${panelTopHTML(gameId, snap)}</div>
-    <div class="section-title"><span class="label">Play by play</span></div>
-    <div class="feed" id="panel-feed">${feedHTML(cards, "No plays yet.")}</div>`;
-}
-
-function panelTopHTML(gameId, snap) {
-  const g = snap.games.find((x) => x.id === gameId);
-  if (!g) return `<p class="empty">Pick a game.</p>`;
-  const ball = (t) => (g.state === "in" && g.offense === t ? `<i class="ballmark" title="Has the ball"></i>` : "");
-  const status = g.state === "pre" ? `<b>${esc(kickoffText(g))}</b>Kickoff` : g.state === "post" ? `<b>Final</b>` : `<b>Q${g.period > 4 ? "OT" : g.period} ${clock(g.clockSec)}</b>${g.homeWinProb != null ? `${esc(g.home)} win ${pct(g.homeWinProb)}` : ""}`;
-  const players = snap.matchups.flatMap((m) => [...m.mine, ...m.theirs]).filter((p) => p.game?.id === gameId)
-    .sort((a, b) => (a.owner === "me" ? 0 : 1) - (b.owner === "me" ? 0 : 1) || b.current - a.current);
-  const momentum = ui.tracker.momentum(gameId);
-  return `
-    <div class="scoreline">
-      <div class="team"><span class="abbr">${esc(g.away)} ${ball(g.away)}</span><span class="pts num">${g.state === "pre" ? "" : g.awayScore}</span></div>
-      <div class="gclock num">${status}</div>
-      <div class="team home"><span class="abbr">${ball(g.home)} ${esc(g.home)}</span><span class="pts num">${g.state === "pre" ? "" : g.homeScore}</span></div>
-    </div>
-    ${g.state === "in" && g.offense && g.yardsToGoal != null ? `<div class="situation">${esc(g.offense)} ball · ${esc(g.downText ?? "")}</div>${fieldSvg(g)}` : ""}
-    ${momentum.length > 1 ? momentumSvg(g, momentum) : ""}
-    ${players.length ? `<div class="section-title"><span class="label">Your matchup in this game</span></div>
-      <div class="stakes">${players.map((p) => `<div class="stake ${p.owner}">
-        <span class="pos">${esc(p.pos === "DEF" ? "D/ST" : p.pos)}</span>
-        <span class="who">${esc(p.name)} <small>· ${p.owner === "me" ? "you" : "opponent"}</small></span>
-        <span class="now num">${n1(p.current)}</span>
-        <span class="left num">${g.state === "post" ? "final" : `${p.remaining >= 0 ? "+" : ""}${n1(p.remaining)}<br>expected`}</span></div>`).join("")}</div>` : ""}`;
-}
-
-// The field from the offense's view: own end zone left, the one they're attacking on the right.
-// The shaded band is this drive so far.
-function fieldSvg(g) {
-  const W = 600, H = 66, ez = 40, play = W - 2 * ez;
-  const x = (yd) => ez + (yd / 100) * play;
-  const ball = 100 - g.yardsToGoal;
-  const start = g.driveStart != null ? 100 - g.driveStart : ball;
-  const lines = [];
-  for (let yd = 10; yd < 100; yd += 10) {
-    lines.push(`<line x1="${x(yd)}" y1="6" x2="${x(yd)}" y2="${H - 6}" stroke="var(--field-line)" stroke-width="1"/>`);
-    lines.push(`<text x="${x(yd)}" y="${H - 9}" text-anchor="middle" font-size="11" fill="var(--mute)" font-family="Barlow Condensed, sans-serif">${yd <= 50 ? yd : 100 - yd}</text>`);
-  }
-  const toGain = g.distance && g.yardsToGoal > g.distance ? x(ball + g.distance) : null;
-  return `<svg class="field" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(g.offense)} ball, ${g.yardsToGoal} yards from the end zone">
-    <rect x="0" y="0" width="${W}" height="${H}" rx="8" fill="var(--field)"/>
-    <rect x="${x(80)}" y="0" width="${x(100) - x(80)}" height="${H}" fill="var(--hot)" opacity="0.12"/>
-    <rect x="${W - ez}" y="0" width="${ez}" height="${H}" rx="8" fill="var(--hot)" opacity="0.28"/>
-    <rect x="0" y="0" width="${ez}" height="${H}" rx="8" fill="var(--field-line)" opacity="0.6"/>
-    ${lines.join("")}
-    ${ball > start ? `<rect x="${x(start)}" y="${H / 2 - 9}" width="${x(ball) - x(start)}" height="10" rx="3" fill="var(--you)" opacity="0.35"/>` : ""}
-    ${toGain ? `<line x1="${toGain}" y1="4" x2="${toGain}" y2="${H - 4}" stroke="var(--you)" stroke-width="2" stroke-dasharray="4 3"/>` : ""}
-    <line x1="${x(ball)}" y1="4" x2="${x(ball)}" y2="${H - 4}" stroke="var(--chalk)" stroke-width="2"/>
-    <ellipse cx="${x(ball)}" cy="${H / 2 - 4}" rx="9" ry="5.5" fill="var(--you)" stroke="var(--you-ink)" stroke-width="1"/>
-    <text x="${W - ez / 2}" y="${H / 2}" text-anchor="middle" dominant-baseline="middle" font-size="11" font-weight="700" fill="var(--chalk)" font-family="Barlow Condensed, sans-serif" transform="rotate(90 ${W - ez / 2} ${H / 2})">END ZONE</text>
-  </svg>`;
-}
-
-// Win chance after every play: above the middle line the home team is favored.
-function momentumSvg(g, pts) {
-  const W = 600, H = 96, padL = 34, padR = 8, padY = 8;
-  const x = (i) => padL + (i / Math.max(1, pts.length - 1)) * (W - padL - padR);
-  const y = (wp) => padY + (1 - wp) * (H - 2 * padY);
-  const line = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.wp).toFixed(1)}`).join("");
-  const area = `${line}L${x(pts.length - 1).toFixed(1)},${y(0.5)}L${x(0)},${y(0.5)}Z`;
-  const quarters = [];
-  for (let i = 1; i < pts.length; i++) if (pts[i].period !== pts[i - 1].period) quarters.push(`<line x1="${x(i)}" y1="${padY}" x2="${x(i)}" y2="${H - padY}" stroke="var(--line)" stroke-width="1"/>`);
-  const last = pts[pts.length - 1];
-  return `<div class="col" style="gap:6px"><div class="section-title"><span class="label">Momentum</span><span class="label">${esc(g.home)} win ${pct(last.wp)}</span></div>
-    <svg class="momentum" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(g.home)} win chance over the game, now ${pct(last.wp)}">
-      ${quarters.join("")}
-      <line x1="${padL}" y1="${y(0.5)}" x2="${W - padR}" y2="${y(0.5)}" stroke="var(--line)" stroke-dasharray="3 4"/>
-      <path d="${area}" fill="var(--chalk)" opacity="0.08"/>
-      <path d="${line}" fill="none" stroke="var(--chalk)" stroke-width="2" stroke-linejoin="round"/>
-      <circle cx="${x(pts.length - 1)}" cy="${y(last.wp)}" r="4" fill="var(--you)"/>
-      <text x="4" y="${padY + 10}" font-size="12" font-weight="700" fill="var(--mute)" font-family="Barlow Condensed, sans-serif">${esc(g.home)}</text>
-      <text x="4" y="${H - padY}" font-size="12" font-weight="700" fill="var(--mute)" font-family="Barlow Condensed, sans-serif">${esc(g.away)}</text>
-    </svg></div>`;
-}
-
-function renderElsewhere() {
-  const el = $("#elsewhere");
-  if (!el) return;
-  const e = ui.elsewhere;
-  if (!e || Date.now() - e.at > ELSEWHERE_MS || e.card.gameId === ui.gameId) { el.innerHTML = ""; return; }
-  const c = e.card;
-  const who = c.impacts.find((i) => i.pos !== "DEF");
-  el.innerHTML = `<button class="elsewhere ${who?.owner ?? ""}" type="button" data-game="${esc(c.gameId)}">
-    <span><b>${esc(c.name)}</b> ${esc(c.label)} · ${esc(c.gameName)} · ${who?.owner === "me" ? "your" : "opp"} ${esc(who?.pos ?? "")}</span><span aria-hidden="true">›</span></button>`;
-}
-
-function kickoffText(g) {
-  return new Date(g.kickoff).toLocaleString("en-US", { ...ET, weekday: "short", hour: "numeric", minute: "2-digit" });
-}
-
-// ---------- Header, replay bar, setup ----------
-
-function renderHeader() {
-  const nav = $("#nav");
-  nav.hidden = !ui.tracker;
-  nav.innerHTML = ui.screen === "zone" ? `<span class="arrow" aria-hidden="true">▦</span>All games`
-    : ui.screen === "game" ? `<span class="arrow" aria-hidden="true">‹</span>All games` : `<span class="arrow" aria-hidden="true">‹</span>The Zone`;
-  nav.dataset.nav = ui.screen === "games" ? "zone" : "games";
-  const s = $("#status");
-  const live = ui.mode === "live" && ui.tracker && !ui.error;
-  s.className = `status ${live ? "live" : ""}`;
-  const ago = ui.updatedAt ? Math.round((Date.now() - ui.updatedAt) / 1000) : 0;
-  s.querySelector("span").textContent = ui.mode === "live" ? (ui.error && ui.tracker ? "Reconnecting" : ui.tracker ? `Live · ${ago}s ago` : "Connecting") : ui.mode === "replay" ? "Replay · not live" : "Loading";
-}
-
-function renderReplayBar() {
-  const bar = $("#replaybar");
-  if (ui.mode !== "replay" || !ui.replayData) { bar.hidden = true; bar.innerHTML = ""; return; }
-  bar.hidden = false;
-  bar.innerHTML = `<div class="replaybar">
-    <span class="clock num" id="rclock"></span>
-    <span class="what"><b>Replay, not live.</b> Every real play from NFL Week 6, arriving at the moment it happened, with ${esc(ui.replayData.user)}'s real league.</span>
-    <div class="seg" role="group" aria-label="Speed">${[[0, "Pause"], [1, "1×"], [2, "2×"], [5, "5×"], [20, "20×"]].map(([v, l]) => `<button type="button" data-speed="${v}" aria-pressed="${ui.speed === v}">${l}</button>`).join("")}</div>
-    <div class="seg" role="group" aria-label="Jump to">${kickoffWindows().map((w) => `<button type="button" data-jump="${w.at}">${esc(w.label)}</button>`).join("")}</div>
-    ${ui.hasServer ? `<button class="chipbtn" type="button" data-mode="live">Back to live</button>` : ""}
-  </div>`;
-  updateReplayClock();
-}
-
-function updateReplayClock() {
-  const el = $("#rclock");
-  if (!el || !ui.replay) return;
-  const t = new Date(ui.replay.time).toLocaleString("en-US", { ...ET, weekday: "short", hour: "numeric", minute: "2-digit", second: "2-digit" });
-  el.textContent = ui.replay.done ? `${t} · end of saved plays` : `${t} ET`;
-  document.querySelectorAll("[data-speed]").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.speed) === ui.speed)));
-}
-
-// Kickoff windows that have plays: London morning, 1 PM, 4 PM, night.
-function kickoffWindows() {
-  const d = ui.replayData;
-  const played = new Set(d.plays.map((p) => p.gameId));
-  const starts = [...new Set(d.games.filter((g) => played.has(g.id)).map((g) => Date.parse(g.kickoff)))]
-    .filter((t) => t >= REPLAY_START - 6 * 3600_000).sort((a, b) => a - b);
-  const out = [];
-  for (const t of starts) {
-    if (!out.length || t - 3 * 60_000 - out[out.length - 1].at > 3600_000) {
-      out.push({ at: t - 3 * 60_000, label: new Date(t).toLocaleString("en-US", { ...ET, hour: "numeric", minute: "2-digit" }).replace(":00", "") });
-    }
-  }
-  return out;
-}
-
-function renderSetup(el) {
-  el.innerHTML = `<form class="setup" id="setup">
-    <h1>Connect your Sleeper league</h1>
-    <p>Type your Sleeper username. The app finds your leagues, team, opponent and scoring by itself. No password needed.</p>
-    <label class="label" for="username">Sleeper username</label>
-    <input id="username" autocomplete="username" required placeholder="ontopgun">
-    <button class="go" type="submit">Connect</button>
-    <button class="chipbtn" type="button" data-mode="replay">Or watch last Sunday's replay</button>
-    ${ui.error ? `<p class="err">${esc(ui.error)}</p>` : ""}
-  </form>`;
+// Live mode needs a Sleeper username first.
+function showSetup() {
+  if (ui.stack.length) return layers.closeAll(() => showSetup());
+  stop();
+  ui.mode = "live"; ui.tracker = null;
+  appbar.clear(); appbar.renderTransport(); rail.clear();
+  showBoot(setupHTML({ error: ui.error, username: ui.username }));
   $("#setup").addEventListener("submit", (e) => {
     e.preventDefault();
     ui.username = $("#username").value.trim();
@@ -441,62 +465,107 @@ function renderSetup(el) {
   });
 }
 
-function updateNewPill() {
-  const pill = $("#newpill");
-  pill.hidden = !(ui.newCount > 0 && ui.screen === "zone");
-  pill.textContent = `↑ ${ui.newCount} new ${ui.newCount === 1 ? "play" : "plays"}`;
+function jump(at) {
+  closeSheet();
+  ui.replay.jump(at);
+  ui.tracker = ui.replay.tracker;
+  resetAll();
 }
 
 // ---------- Controls ----------
 
+const SHEETS = {
+  clock: () => clockSheetHTML({ ui, wins: windows(ui.replayData, { from: REPLAY_START - 6 * 3600_000 }) }),
+  live: () => liveSheetHTML({ ui }),
+  find: () => findSheetHTML(),
+  settings: () => settingsSheetHTML(),
+};
+
+function setSpeed(s) { ui.speed = s; ui.paused = false; store.set("speed", s); tick([]); }
+
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-game],[data-nav],[data-filter],[data-more],[data-speed],[data-jump],[data-mode]");
+  const t = e.target.closest("[data-game],[data-sheet],[data-act],[data-speed],[data-jump],[data-mode],[data-pick],[data-close],[data-step],#scorebug");
   if (!t) return;
-  if (t.dataset.game) return go("game", t.dataset.game);
-  if (t.dataset.nav) return go(t.dataset.nav);
-  if (t.dataset.filter) { ui.filter = t.dataset.filter; store.set("filter", ui.filter); ui.feedLimit = FEED_PAGE; return render(); }
-  if (t.dataset.more !== undefined) { ui.feedLimit += FEED_PAGE; return render(); }
-  if (t.dataset.speed !== undefined) { ui.speed = Number(t.dataset.speed); store.set("speed", ui.speed); return updateReplayClock(); }
-  if (t.dataset.jump) {
-    ui.replay.jump(Number(t.dataset.jump));
-    ui.tracker = ui.replay.tracker;
-    ui.lastWp.clear(); ui.wpDelta.clear(); ui.elsewhere = null;
-    return render();
+  if (t.id === "scorebug") { // your matchup, one tap from anywhere: whatever is open closes first, in one Back step
+    return layers.closeAll(() => { if (ui.tabIds.includes("matchup")) selectTab("matchup", { focus: true }); });
   }
-  if (t.dataset.mode === "replay") return startReplay();
-  if (t.dataset.mode === "live") {
-    if (ui.username) return startLive();
-    clearInterval(ui.timer);
-    ui.mode = "live"; ui.tracker = null;
-    return render();
+  if (t.dataset.close === "layer") return closeGame();
+  if (t.dataset.step) return stepGame(Number(t.dataset.step));
+  if (t.dataset.game) return openGame(t.dataset.game); // a play card, a game chip or a tile (play details come later)
+  if (t.dataset.sheet) {
+    if (t.dataset.sheet === "clock" && !ui.replay) return;
+    return openSheet(t.dataset.sheet);
+  }
+  if (t.dataset.speed) return setSpeed(Number(t.dataset.speed));
+  if (t.dataset.jump) return jump(Number(t.dataset.jump));
+  if (t.dataset.pick) { ui.pick = t.dataset.pick; store.set("pick", ui.pick); layoutColumns(); return selectTab(ui.pick); }
+  if (t.dataset.mode === "replay") return layers.closeAll(() => startReplay());
+  if (t.dataset.mode === "live") return layers.closeAll(() => (ui.username ? startLive() : showSetup()));
+  switch (t.dataset.act) {
+    case "pause": ui.paused = !ui.paused; return tick([]);
+    case "speed": return setSpeed(nextSpeed(ui.speed));
+    case "open-games": return layers.closeAll(() => selectTab("games", { focus: true })); // "All games ›"
+    case "change-user": return layers.closeAll(() => { ui.error = null; showSetup(); });
+    case "fantasy-on": ui.fantasyOn = true; buildTabs(); views.zone.note(null); return selectTab("matchup");
   }
 });
+
 document.addEventListener("keydown", (e) => {
-  if ((e.key === "Enter" || e.key === " ") && e.target.matches("article.play[data-game]")) { e.preventDefault(); go("game", e.target.dataset.game); }
-});
-$("#newpill").addEventListener("click", () => {
-  const feed = $("#feed");
-  if (feed) window.scrollTo({ top: feed.getBoundingClientRect().top + window.scrollY - 70, behavior: "smooth" });
-  ui.newCount = 0; updateNewPill();
-});
-window.addEventListener("scroll", () => {
-  if (ui.newCount && window.scrollY < 200) { ui.newCount = 0; updateNewPill(); }
-}, { passive: true });
-window.addEventListener("resize", () => {
-  if (wide() !== ui.wasWide) {
-    ui.wasWide = wide();
-    if (ui.screen === "game" && wide()) { ui.panelId = ui.gameId; ui.screen = "zone"; }
-    if (ui.tracker) render();
+  if (e.key === "Escape") { // closes the top sheet or layer
+    if (ui.stack.length) { e.preventDefault(); layers.back(); }
+    return;
+  }
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches?.("article.play[data-game]")) { e.preventDefault(); return openGame(e.target.dataset.game); }
+  const typing = e.target.closest?.("input, textarea, select, [contenteditable]");
+  if (typing || sheet.kind || e.metaKey || e.ctrlKey || e.altKey) return;
+  if ((e.key === "[" || e.key === "]") && layers.top()?.kind === "game") return stepGame(e.key === "[" ? -1 : 1); // previous / next game
+  if (/^[1-4]$/.test(e.key)) {
+    const id = ui.tabIds[Number(e.key) - 1];
+    if (!id) return;
+    // A game covers the tabs (phone) or the last column: close it first when the tab would be under it.
+    const covered = gameLayer.id && (!ui.cols || id === ui.cols.at(-1) || !ui.cols.includes(id));
+    if (covered) return layers.closeAll(() => selectTab(id, { focus: true }));
+    selectTab(id, { focus: true });
   }
 });
-setInterval(renderHeader, 1000);
+
+// A link straight to a tab (#zone, #matchup, #games) or a game (#game/<id>).
+function route(hash, { smooth = true } = {}) {
+  const h = String(hash ?? "").replace(/^#/, "");
+  const game = /^game\/([^/]+)/.exec(h);
+  if (game) {
+    if (ui.tracker) { if (!openGame(game[1])) views.zone.note("That game isn't in this replay."); }
+    else ui.wantGame = game[1];
+    return;
+  }
+  if (ui.tabIds.includes(h)) return selectTab(h, { smooth });
+  if (h === "matchup" && !ui.fantasyOn) {
+    selectTab("zone", { smooth });
+    views.zone.note(`Matchup is hidden because fantasy is off · <button type="button" data-act="fantasy-on">Turn on</button>`);
+  } else if (h === "league") {
+    selectTab("zone", { smooth });
+    views.zone.note("League isn't set up yet.");
+  }
+}
+addEventListener("hashchange", () => route(location.hash));
+
+// Live and replay status ticks over once a second even when no plays arrive (the "Live 4s" counter).
+setInterval(() => appbar.renderTransport(), 1000);
+
+// For checks from the browser console (plan M1 (i)): ui.fantasyOn = false; buildTabs()
+// and M1 (d): H.ok = false makes layers open without a Back step.
+Object.assign(globalThis, { ui, buildTabs, selectTab, H, layers });
 
 // ---------- Start ----------
 
+const startHash = location.hash;
+buildTabs();
+route(startHash, { smooth: false });
+try { history.replaceState({ fz: 1, depth: 0 }, "", `#${ui.tab}`); } catch { /* history unavailable */ }
+
 ui.hasServer = await fetch("/proxy/ping").then((r) => r.ok).catch(() => false);
 if (ui.hasServer) {
-  ui.mode = "live";
-  if (ui.username) startLive(); else render();
+  if (ui.username) startLive(); else showSetup();
 } else {
   startReplay();
 }
