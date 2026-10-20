@@ -291,6 +291,19 @@ table.box .tl { text-align: left; } table.box td.me { color: var(--you); font-we
 .info-line { margin: 8px 0; font-size: 15px; }
 .injuries { margin: 4px 0 16px; padding-left: 18px; font-size: 13px; }
 .subtabs [role="tab"] { padding: 0 4px; }
+/* What-if (M9) */
+.wi-top { display: flex; align-items: center; gap: 12px; padding: 8px 2px; position: sticky; top: 0; z-index: 2; background: var(--turf); border-bottom: 1px solid var(--line); }
+.wi-top span small { display: block; font: 600 11px/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--mute); }
+.wi-top b { font: 800 30px/1.1 var(--display); } .wi-top b.up { color: var(--up); } .wi-top b.down { color: var(--down); }
+.wi-arrow { color: var(--mute); font-size: 20px; }
+.wi-top .chipbtn { margin-left: auto; }
+.wi-list { list-style: none; margin: 0; padding: 0 0 24px; }
+.wi-row { display: grid; gap: 6px; padding: 10px 2px 10px 10px; border-bottom: 1px solid var(--line); border-left: 3px solid var(--you); }
+.wi-row.opponent { border-left-color: var(--opp); }
+.wi-name b { font: 700 16px/1.2 var(--display); } .wi-name small { display: block; font-size: 12px; color: var(--mute); }
+.wi-tag { color: var(--chalk); font-weight: 600; }
+.wi-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.wi-btns .chipbtn { min-height: 30px; padding: 6px 10px; }
 /* Settings switches */
 .setlist { display: grid; gap: 8px; margin: 8px 0 14px; }
 .setrow { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; text-align: left; color: var(--chalk); }

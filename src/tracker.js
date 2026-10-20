@@ -108,7 +108,7 @@ export function createTracker({ leagues, players, games }) {
       const myNow = sum(mine, "current"), oppNow = sum(theirs, "current");
       const myFinal = myNow + sum(mine, "remaining"), oppFinal = oppNow + sum(theirs, "remaining");
       const spread = Math.sqrt([...mine, ...theirs].reduce((s, p) => s + p.remainingSpread ** 2, 0));
-      return { league: l.league, info: l.info, opponentName: l.opponentName, weight: l.weight ?? 1, mine, theirs, myNow, oppNow, myFinal, oppFinal, spread, winProb: winChance(myFinal - oppFinal, spread) };
+      return { league: l.league, scoring: l.scoring, info: l.info, opponentName: l.opponentName, weight: l.weight ?? 1, mine, theirs, myNow, oppNow, myFinal, oppFinal, spread, winProb: winChance(myFinal - oppFinal, spread) };
     });
   }
 

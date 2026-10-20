@@ -3,8 +3,8 @@
 // points so far and where his game is:
 //   ○ yet to play (with the day and time, "MON 8:15 PM · yet to play")   ● playing
 //   ◉ his team has the ball (a defense: it's on the field)              ✓ his game is over
-// Chips: [Lineup] and [Swings] (your win chance through the day, the plays that moved it most), and [Story ›]
-// (your day in 6 cards). What-if arrives with its own step, so there are no empty chips. The hero also says how sweaty it is and
+// Chips: [Lineup], [Swings] (your win chance through the day, the plays that moved it most), [What-if] (tap
+// "+TD" on a player and see your win chance move; nothing real changes), and [Story ›] (your day in 6 cards). The hero also says how sweaty it is and
 // what you still need. Everything is changed in place on each update; nothing here moves by itself.
 
 import { esc, pct, n1 } from "./cards.js";
@@ -13,11 +13,13 @@ import { sweat, needs, swings, playerSwings, breakeven } from "../src/insights.j
 import { winChartSvg, winChartScale } from "./charts.js";
 import { cardHTML } from "./cards.js";
 import { windows } from "../src/replay.js";
+import { applyWhatIf, whatIfMoves } from "../src/whatif.js";
 
 const set = (el, html) => { if (el._h !== html) el.innerHTML = el._h = html; };
 
 export function createMatchupView({ ui }) {
-  let hero, rows, swingsEl, page;
+  let hero, rows, swingsEl, whatifEl, page;
+  const edits = new Map(); // what-if: `${owner}:${id}` -> { add, zero }
   ui.mview ??= "lineup";
 
   const myName = () => (ui.mode === "live" ? ui.live?.user : ui.replayData?.user) ?? "";
@@ -72,12 +74,42 @@ export function createMatchupView({ ui }) {
       <div class="feed">${cards.length ? cards.map((c) => cardHTML(c, false)).join("") : `<p class="empty">No swings yet.</p>`}</div>`;
   }
 
+  function paintWhatif() {
+    const m = ui.tracker?.snapshot().matchups[0];
+    if (m) set(whatifEl, whatifHTML(m));
+  }
+
+  // What-if: every starter who isn't done yet, with buttons; your win chance with those plays at the top.
+  function whatifHTML(m) {
+    const out = applyWhatIf(m, edits);
+    const players = [...m.mine, ...m.theirs].filter((p) => p.game?.state !== "post");
+    const row = (p) => {
+      const key = `${p.owner}:${p.id}`, e = edits.get(key);
+      const moves = whatIfMoves(p, m.scoring);
+      const tag = e ? `${e.zero ? "0 from here" : ""}${e.zero && e.add ? ", " : ""}${e.add ? `+${n1(e.add)}` : ""}` : "";
+      return `<li class="wi-row ${p.owner}">
+        <span class="wi-name"><b>${esc(p.name)}</b><small>${esc(p.pos === "DEF" ? "D/ST" : p.pos)} · ${p.owner === "me" ? "yours" : "theirs"}${tag ? ` · <span class="wi-tag">${esc(tag)}</span>` : ""}</small></span>
+        <span class="wi-btns">${moves.map((x) => `<button class="chipbtn" type="button" data-wi="${key}:${x.key}" aria-label="${esc(`${x.label} for ${p.name}`)}">${x.label}</button>`).join("")}<button class="chipbtn" type="button" data-wi="${key}:zero" aria-pressed="${!!e?.zero}">0 more</button></span>
+      </li>`;
+    };
+    return `<div class="wi-top">
+        <span><small>Win now</small><b class="num">${pct(m.winProb)}</b></span>
+        <span class="wi-arrow" aria-hidden="true">→</span>
+        <span><small>What-if</small><b class="num ${out.winProb > m.winProb + 0.0005 ? "up" : out.winProb < m.winProb - 0.0005 ? "down" : ""}">${pct(out.winProb)}</b></span>
+        <button class="chipbtn" type="button" data-wi-reset${edits.size ? "" : " disabled"}>Reset</button>
+      </div>
+      <p class="sheet-note">Tap a play to add it. Just pretend: nothing real changes.</p>
+      ${players.length ? `<ol class="wi-list">${players.map(row).join("")}</ol>` : `<p class="empty">Everyone has played.</p>`}`;
+  }
+
   function setView(v) {
     ui.mview = v;
     for (const b of page.querySelectorAll("[data-mview]")) b.setAttribute("aria-pressed", String(b.dataset.mview === v));
     rows.hidden = v !== "lineup";
     swingsEl.hidden = v !== "swings";
+    whatifEl.hidden = v !== "whatif";
     if (v === "swings") { swingsEl._h = null; set(swingsEl, swingsHTML()); }
+    if (v === "whatif") paintWhatif();
   }
 
   // One side of a row: name, points and the status mark on the first line, the note under it.
@@ -98,15 +130,33 @@ export function createMatchupView({ ui }) {
       el.insertAdjacentHTML("beforeend", `
         <div class="page-head"><div class="colhead"><h2 class="coltitle" id="col-matchup" tabindex="-1">Matchup</h2><span class="colpick-slot"></span></div></div>
         <section class="mhero" data-hero aria-label="Score and win chance"><p class="empty">Loading…</p></section>
-        <div class="mseg"><span class="seg" role="group" aria-label="Matchup view"><button type="button" data-mview="lineup" aria-pressed="true">Lineup</button><button type="button" data-mview="swings" aria-pressed="false">Swings</button></span><button class="chipbtn storybtn" type="button" data-act="story">Story ›</button></div>
+        <div class="mseg"><span class="seg" role="group" aria-label="Matchup view"><button type="button" data-mview="lineup" aria-pressed="true">Lineup</button><button type="button" data-mview="swings" aria-pressed="false">Swings</button><button type="button" data-mview="whatif" aria-pressed="false">What-if</button></span><button class="chipbtn storybtn" type="button" data-act="story">Story ›</button></div>
         <ol class="lineup" data-rows aria-label="Starters, yours on the left, theirs on the right"></ol>
-        <section class="mswings" data-swings hidden></section>`);
+        <section class="mswings" data-swings hidden></section>
+        <section class="mwhatif" data-whatif hidden aria-label="What-if"></section>`);
       page = el;
       hero = el.querySelector("[data-hero]");
       hero.addEventListener("toggle", (e) => { if (e.target.matches(".mswing")) ui.mswingOpen = e.target.open; }, true);
       rows = el.querySelector("[data-rows]");
       swingsEl = el.querySelector("[data-swings]");
-      el.addEventListener("click", (e) => { const b = e.target.closest("[data-mview]"); if (b) setView(b.dataset.mview); });
+      whatifEl = el.querySelector("[data-whatif]");
+      el.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-mview]");
+        if (b) return setView(b.dataset.mview);
+        if (e.target.closest("[data-wi-reset]")) { edits.clear(); return paintWhatif(); }
+        const w = e.target.closest("[data-wi]");
+        if (!w) return;
+        const [owner, id, key] = w.dataset.wi.split(":");
+        const m = ui.tracker?.snapshot().matchups[0];
+        const p = m && [...m.mine, ...m.theirs].find((x) => x.owner === owner && x.id === id);
+        if (!p) return;
+        const k = `${owner}:${id}`, e0 = edits.get(k) ?? { add: 0, zero: false };
+        if (key === "zero") e0.zero = !e0.zero;
+        else e0.add += whatIfMoves(p, m.scoring).find((x) => x.key === key)?.points ?? 0;
+        if (!e0.zero && !e0.add) edits.delete(k); else edits.set(k, e0);
+        paintWhatif();
+        el.querySelector(`[data-wi="${w.dataset.wi}"]`)?.focus({ preventScroll: true });
+      });
       // Crosshair readout on the chart: the time and your win chance under the finger or mouse.
       el.addEventListener("pointermove", (e) => {
         const svg = e.target.closest?.(".winchart");
@@ -123,13 +173,14 @@ export function createMatchupView({ ui }) {
       el.addEventListener("pointerleave", () => el.querySelector(".winchart .xhair")?.setAttribute("visibility", "hidden"), true);
       setView(ui.mview);
     },
-    reset(ctx) { this.update(ctx); },
+    reset(ctx) { edits.clear(); this.update(ctx); },
     update(ctx) {
       if (!ui.tracker) return;
       const m = ctx.snap.matchups[0];
       if (!m) { set(hero, `<p class="empty">No fantasy matchup this week.</p>`); set(rows, ""); return; }
       set(hero, heroHTML(m));
       if (ui.mview === "swings") set(swingsEl, swingsHTML());
+      if (ui.mview === "whatif") set(whatifEl, whatifHTML(m));
       const vm = lineupVM(m, { now: ui.replay?.time ?? Date.now(), statLine: (p) => ui.tracker.statLine?.(p.id, p.pos) });
       set(rows, rowsHTML(vm));
     },
