@@ -15,6 +15,7 @@ import { clockSheetHTML, refreshClockSheet, liveSheetHTML, findSheetHTML, findRe
 import { createZoneView } from "./views/zone.js";
 import { createMatchupView } from "./views/matchup.js";
 import { createGamesView } from "./views/games.js";
+import { createLeagueView } from "./views/league.js";
 import { createGameLayer } from "./views/game.js";
 import { createRail } from "./ui/rail.js";
 import { buildIndex, search } from "./src/search.js";
@@ -70,12 +71,15 @@ const views = {
   zone: createZoneView({ ui, store }),
   matchup: createMatchupView({ ui }),
   games: createGamesView({ ui, store, getCtx: () => lazyCtx() }),
+  league: createLeagueView({ ui }),
 };
 
-// The tabs, in order. Later: League (needs league data). The same list becomes the phone app's tabs.
+// The tabs, in order. League shows once the whole league's data is there (the replay has it; live mode
+// doesn't fetch it yet). The same list becomes the phone app's tabs.
 const TABS = [
   { id: "zone", label: "Zone", view: views.zone },
   { id: "matchup", label: "Matchup", view: views.matchup, fantasy: true },
+  { id: "league", label: "League", view: views.league, fantasy: true, needs: (d) => !!d?.teams },
   { id: "games", label: "Games", view: views.games },
 ];
 const tabOf = (id) => TABS.find((t) => t.id === id);
@@ -93,7 +97,7 @@ function lazyCtx() {
 // Build (or rebuild) the tab bar and pages from the visible tabs (plan B1.1). Pages of hidden tabs are kept,
 // so they come back with their scroll spot.
 function buildTabs() {
-  const tabs = visibleTabs(TABS, { fantasyOn: ui.fantasyOn });
+  const tabs = visibleTabs(TABS, { fantasyOn: ui.fantasyOn, data: ui.mode === "replay" ? ui.replayData?.leagues?.[0] : null });
   const ids = tabs.map((t) => t.id);
   if (mainPager && ids.join() === ui.tabIds.join()) return;
   const before = ui.tabIds;
@@ -128,7 +132,7 @@ function buildTabs() {
   restorePageScroll();
 
   mainPager?.destroy();
-  mainPager = createPager({ tabbar, pager: pagerEl, tabs: buttons, pages, onSettle, onReselect });
+  mainPager = createPager({ tabbar, pager: pagerEl, tabs: buttons, pages, onSettle, onReselect, onGo: (i) => catchUp(undefined, [ui.tabIds[i]]) });
   const keep = ids.includes(ui.tab) ? ui.tab : "zone";
   if (ui.tab && keep !== ui.tab) setHash("zone");
   mainPager.start(ids.indexOf(keep));
@@ -199,9 +203,9 @@ function onReselect(i) {
 }
 
 // Pages that just came into reach get what they missed.
-function catchUp(ctx = ui.tracker ? lazyCtx() : null) {
+function catchUp(ctx = ui.tracker ? lazyCtx() : null, also = []) {
   if (!ctx || !mainPager) return;
-  for (const id of nearTabs(ui.tabIds, mainPager.active, ui.cols)) {
+  for (const id of [...nearTabs(ui.tabIds, mainPager.active, ui.cols), ...also]) {
     if (!ui.stale.has(id)) continue;
     ui.stale.delete(id);
     const missed = ui.missed[id] ?? [];
@@ -531,6 +535,7 @@ async function startReplay() {
   ui.replay = createReplay(ui.replayData, { startAt: REPLAY_START });
   ui.tracker = ui.replay.tracker;
   hideBoot();
+  buildTabs(); // League appears now that its data is here
   resetAll();
   let last = performance.now();
   ui.timer = setInterval(() => {
@@ -545,6 +550,7 @@ async function startLive() {
   if (ui.stack.length) return layers.closeAll(() => startLive());
   stop();
   ui.mode = "live"; ui.tracker = null; ui.replay = null; ui.error = null; ui.updatedAt = 0; ui.connecting = true;
+  buildTabs();
   appbar.clear(); appbar.renderTransport(); rail.clear();
   showBoot(`<p class="empty">Connecting to Sleeper and ESPN…</p>`);
   try {
@@ -659,6 +665,7 @@ document.addEventListener("click", (e) => {
     case "change-user": return layers.closeAll(() => { ui.error = null; showSetup(); });
     case "fantasy-on": setFantasy(true); return selectTab("matchup");
     case "story": return openStory();
+    case "goto-matchup": return selectTab("matchup", { focus: true });
     case "toggle-fantasy": setFantasy(!ui.fantasyOn); return refreshSettings();
     case "toggle-banners": ui.settings.banners = !ui.settings.banners; store.set("banners", ui.settings.banners); if (!ui.settings.banners) banner.hide(); return refreshSettings();
   }

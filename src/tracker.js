@@ -245,6 +245,21 @@ export function createTracker({ leagues, players, games }) {
       return out;
     },
     game: (id) => gameMap.get(id),
+    // Every team in the league (League tab): points now, expected final, spread of what's left, who's playing.
+    //   teams: [{ roster_id, starters: [{ id, pos, team, projected, profile }] }]
+    board: (teams, scoring) => teams.map((t) => {
+      let now = 0, left = 0, spread2 = 0, playing = 0, toPlay = 0;
+      for (const p of t.starters) {
+        const g = gameMap.get(gameByTeam.get(p.team));
+        const frac = g ? fractionLeft(g) : 0;
+        const bonus = p.pos === "DEF" && g && g.state !== "pre" ? allowedBonus(p.team, g, scoring) : 0;
+        now += pointsFor(p, scoring);
+        left += (p.projected - bonus) * frac;
+        spread2 += ((p.profile?.spread ?? 6) ** 2) * frac;
+        if (g?.state === "in") playing++; else if (g?.state === "pre") toPlay++;
+      }
+      return { roster_id: t.roster_id, now, final: now + left, spread2, playing, toPlay };
+    }),
   };
 }
 

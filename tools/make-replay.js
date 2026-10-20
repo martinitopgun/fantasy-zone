@@ -55,6 +55,33 @@ const players = projRows.filter((r) => r.player && r.team && r.player.position !
 
 const plays = Object.values(files).flatMap((g) => g.plays).sort((a, b) => a.wallclock - b.wallclock);
 
+// The whole league for the League tab (fixtures/league, saved once from Sleeper): every team's Week 6 starters,
+// the 5 pairings, weeks 1-5 results for the standings, and the latest moves. Display names only (team names
+// can be anything).
+const lf = (f) => read(`fixtures/league/${f}.json`);
+const users = new Map((await lf("users")).map((u) => [u.user_id, u.display_name]));
+const rosters = await lf("rosters");
+const week6 = await lf("matchups_6");
+// Your matchup keeps the lineups saved on Sunday (the league file was saved later, after a Monday kicker swap).
+const sundayStarters = (rid) => (matchups.find((m) => m.roster_id === rid) ?? week6.find((m) => m.roster_id === rid)).starters;
+const teams = rosters.map((r) => ({
+  roster_id: r.roster_id, owner: users.get(r.owner_id) ?? `Team ${r.roster_id}`, me: users.get(r.owner_id) === "ontopgun",
+  starters: sundayStarters(r.roster_id).map(starter),
+}));
+const pairings = Object.values(Object.groupBy(week6, (m) => m.matchup_id)).map((ms) => ms.map((m) => m.roster_id));
+const results = [];
+for (let w = 1; w <= 5; w++) results.push({ week: w, rows: (await lf(`matchups_${w}`)).map((m) => ({ roster_id: m.roster_id, matchup_id: m.matchup_id, points: m.points })) });
+const nameOf = (id) => { const r = proj.get(id); return /^[A-Z]{2,3}$/.test(id) ? `${id} D/ST` : r?.player ? `${r.player.first_name} ${r.player.last_name}` : `Player ${id}`; };
+const moves = [];
+for (const w of [5, 6]) {
+  for (const t of await lf(`transactions_${w}`)) {
+    if (t.status !== "complete" || !["trade", "waiver", "free_agent"].includes(t.type)) continue;
+    const list = (o) => Object.entries(o ?? {}).map(([id, rid]) => ({ id, name: nameOf(id), roster_id: rid }));
+    moves.push({ t: t.created, type: t.type, roster_ids: t.roster_ids, adds: list(t.adds), drops: list(t.drops), bid: t.settings?.waiver_bid ?? null });
+  }
+}
+moves.sort((a, b) => b.t - a.t);
+
 await writeFile(path.join(root, "app/replay.json"), JSON.stringify({
   note: "Every real play of NFL Week 6 (ESPN) with ontopgun's real Sleeper league.",
   user: "ontopgun",
@@ -62,6 +89,7 @@ await writeFile(path.join(root, "app/replay.json"), JSON.stringify({
     league: { league_id: league.league_id, name: league.name, roster_positions: league.roster_positions }, scoring, info: describeLeague(league), opponentName: "marcelolopezm2010", weight: 1,
     mine: matchups.find((m) => m.roster_id === 1).starters.map(starter),
     theirs: matchups.find((m) => m.roster_id === 7).starters.map(starter),
+    teams, pairings, results, moves, savedAt: "2026-10-20",
   }],
   players, games, plays,
 }));

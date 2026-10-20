@@ -223,6 +223,39 @@ button:active { opacity: .75; }
 .mseg { display: flex; align-items: center; justify-content: space-between; }
 .storybtn { margin-left: auto; }
 .sharepic { display: block; width: min(100%, 360px); margin: 6px auto 10px; border-radius: 10px; border: 1px solid var(--line); }
+/* League (M6) */
+.lbody { padding: 4px 0 24px; }
+.lmatch { margin: 0 0 10px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.lmatch.mine { border-color: var(--you); }
+.lmhead { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; width: 100%; background: none; border: 0; padding: 0; color: var(--chalk); text-align: left; }
+.lteam { display: grid; gap: 2px; min-width: 0; }
+.lteam + .lvs + .lteam, .lmhead > .lteam:last-child { text-align: right; }
+.lown { font: 600 14px/1.2 var(--display); letter-spacing: 0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lteam b { font: 700 26px/1 var(--display); }
+.lteam small { font-size: 12px; color: var(--mute); }
+.lteam.me .lown, .lteam.me b { color: var(--you); } .lteam.opponent .lown, .lteam.opponent b { color: var(--opp); }
+.lvs { font: 600 12px/1 var(--display); color: var(--mute); text-transform: uppercase; }
+.lbar { height: 4px; margin: 8px 0 6px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.lbar span { display: block; height: 100%; background: var(--chalk); }
+.lmatch.mine .lbar { background: var(--opp); } .lmatch.mine .lbar span { background: var(--you); }
+.lmeta { display: flex; justify-content: space-between; margin: 0; font-size: 12px; color: var(--mute); }
+.llineups { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+.llineups ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.llineups li { display: flex; justify-content: space-between; gap: 6px; } .llineups li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.llineups + .chipbtn { margin-top: 10px; }
+.ltable { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ltable th { font: 600 12px/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--mute); padding: 8px 6px; text-align: right; }
+.ltable td { padding: 10px 6px; border-top: 1px solid var(--line); text-align: right; }
+.ltable .tl { text-align: left; }
+.ltable tr.me td { color: var(--you); font-weight: 600; } .ltable tr.opponent td { color: var(--opp); }
+.lnow { display: inline-block; min-width: 20px; padding: 2px 5px; border-radius: 5px; font: 700 12px/1 var(--display); text-align: center; }
+.lnow.W { background: color-mix(in srgb, var(--up) 22%, transparent); color: var(--up); } .lnow.L { background: color-mix(in srgb, var(--down) 18%, transparent); color: var(--down); }
+.moves { list-style: none; margin: 0; padding: 0; }
+.moves li { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; padding: 10px 2px; border-bottom: 1px solid var(--line); }
+.moves p { margin: 0; font-size: 14px; line-height: 1.35; }
+.moves time { grid-column: 2; font-size: 12px; color: var(--mute); }
+.mvtype { grid-row: span 2; align-self: start; font: 700 11px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 6px; border-radius: 5px; background: var(--panel-2); color: var(--mute); }
+.mvtype.trade { background: var(--you-tint); color: var(--you); }
 /* Settings switches */
 .setlist { display: grid; gap: 8px; margin: 8px 0 14px; }
 .setrow { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; text-align: left; color: var(--chalk); }

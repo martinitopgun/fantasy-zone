@@ -2,17 +2,18 @@
 // One instance runs the main tabs (Zone | Matchup | Games). The browser does the swiping itself
 // (scroll snap), so it feels native; this file only keeps the tabs, the underline and `inert` in step.
 //
-//   createPager({ tabbar, pager, tabs, pages, onSettle, onReselect })
+//   createPager({ tabbar, pager, tabs, pages, onSettle, onReselect, onGo })
 //     tabs        the tab <button role="tab">s, in order      pages   the matching .page sections
 //     onSettle(i, { swipe })   a page became the current one (swipe: the user dragged there)
 //     onReselect(i)            the current tab was tapped again (scroll that page to the top)
+//     onGo(i)                  about to slide to page i (a tab tap): bring it up to date before it shows
 //   returns { go(i), start(i), setEnabled(bool), destroy(), state: { swiping }, active }
 //
 // Rules (plan B1.3): tapping a tab two pages away never activates the page in between; scrolling to where
 // we already are calls settle() directly (no scroll => no scrollend); never scrollIntoView (it would also
 // scroll the preview frame); in dashboard mode (columns) nothing scrolls sideways and every page is live.
 
-export function createPager({ tabbar, pager, tabs, pages, onSettle, onReselect }) {
+export function createPager({ tabbar, pager, tabs, pages, onSettle, onReselect, onGo }) {
   const ink = tabbar.querySelector(".ink");
   const reduce = matchMedia("(prefers-reduced-motion: reduce)");
   const ac = new AbortController();
@@ -51,6 +52,7 @@ export function createPager({ tabbar, pager, tabs, pages, onSettle, onReselect }
 
   function go(i, smooth = true) {
     i = clamp(i);
+    if (i !== active) onGo?.(i);
     if (!enabled) { if (i !== active) activate(i); return; } // dashboard: columns, nothing scrolls
     target = i;
     if (Math.abs(pager.scrollLeft - i * w) < 1) return settle();
