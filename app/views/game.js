@@ -2,10 +2,10 @@
 //   Head:  ‹ (× on a wide screen) · "CHI 14 @ ATL 0  Q2 12:08" · [‹][›] the previous / next live game
 //          (in the order the game chips had when you opened it; it never reshuffles while you look)
 //   Field: who has the ball and where (a mini field), or the kickoff time, or Final
-//   Then:  your matchup's players in this game, the momentum line, and the game's plays (newest on top).
-// The game's own swipeable tabs (Plays, My guys, Momentum) arrive in the next step; until then these sit
-// one under the other, the short ones first. Everything is updated in place; the head's buttons are never
-// rebuilt, so a tap always lands and focus stays put when you switch games.
+//   Then:  the game's own tabs, swipe or tap: Plays (All / Scoring / My players) · My guys · Momentum.
+//          The tab you're on stays picked when you switch games.
+// Everything is updated in place; the head's buttons are never rebuilt, so a tap always lands and focus
+// stays put when you switch games.
 //
 //   const layer = createGameLayer({ el, ui, order })   order(): game ids for ‹ › (frozen at open by app.js)
 //   layer.open(id, ctx) -> false when there's no such game     layer.close()     layer.id
@@ -14,6 +14,7 @@
 import { esc, pct, n1 } from "./cards.js";
 import { fieldSvg, momentumSvg } from "./charts.js";
 import { createFeedList } from "../ui/feed.js";
+import { createPager } from "../ui/pager.js";
 import { gameClock, kickoffShort } from "../src/view-models.js";
 
 const set = (el, html) => { if (el && el._h !== html) el.innerHTML = el._h = html; };
@@ -44,8 +45,12 @@ function guysHTML(g, snap) {
       <span class="left num">${g.state === "post" ? "final" : `+${n1(Math.max(0, p.remaining))} exp`}</span></div>`).join("")}</div>`;
 }
 
+const SUBTABS = [["plays", "Plays"], ["guys", "My guys"], ["momentum", "Momentum"]];
+const PLAY_FILTERS = [["all", "All", () => true], ["scoring", "Scoring", (c) => c.scored], ["mine", "My players", (c) => c.impacts.length > 0]];
+
 export function createGameLayer({ el, ui, order = () => [] }) {
-  let id = null, feed = null, parts = null;
+  let id = null, feed = null, parts = null, pager = null;
+  const playFilter = () => PLAY_FILTERS.find((f) => f[0] === (ui.gamePlays ?? "all"))[2];
   const now = () => ui.replay?.time ?? Date.now();
 
   function skeleton() {
@@ -58,19 +63,42 @@ export function createGameLayer({ el, ui, order = () => [] }) {
         </span>
       </div>
       <div class="layer-field" data-field></div>
-      <div class="layer-body">
-        <div class="layer-pillbar"><button class="newpill" type="button" hidden></button></div>
-        <section class="gguys" data-guys></section>
-        <section class="gmomentum" data-momentum></section>
-        <div class="section-title gplays-title"><span class="label">Plays</span></div>
-        <div data-feed></div>
+      <nav class="tabbar subtabs" role="tablist" aria-label="This game">
+        ${SUBTABS.map(([k, l]) => `<button type="button" role="tab" id="gtab-${k}" aria-controls="gpage-${k}" aria-selected="false" tabindex="-1">${l}</button>`).join("")}
+        <span class="ink" aria-hidden="true"></span>
+      </nav>
+      <div class="pager subpager">
+        <section class="page" id="gpage-plays" role="tabpanel" aria-labelledby="gtab-plays">
+          <div class="page-head">
+            <div class="filters" role="group" aria-label="Which plays">
+              ${PLAY_FILTERS.map(([k, l]) => `<button class="chipbtn" type="button" data-gplays="${k}" aria-pressed="${(ui.gamePlays ?? "all") === k}">${l}</button>`).join("")}
+            </div>
+            <button class="newpill" type="button" hidden></button>
+          </div>
+          <div data-feed></div>
+        </section>
+        <section class="page" id="gpage-guys" role="tabpanel" aria-labelledby="gtab-guys"><div class="gguys" data-guys></div></section>
+        <section class="page" id="gpage-momentum" role="tabpanel" aria-labelledby="gtab-momentum"><div class="gmomentum" data-momentum></div></section>
       </div>`;
     parts = {
       name: el.querySelector(".gt-name"), clock: el.querySelector(".gt-clock"), sub: el.querySelector(".gt-sub"),
       prev: el.querySelector('[data-step="-1"]'), next: el.querySelector('[data-step="1"]'),
       field: el.querySelector("[data-field]"), guys: el.querySelector("[data-guys]"), momentum: el.querySelector("[data-momentum]"),
-      body: el.querySelector(".layer-body"), feed: el.querySelector("[data-feed]"), pill: el.querySelector(".newpill"),
+      plays: el.querySelector("#gpage-plays"), feed: el.querySelector("[data-feed]"), pill: el.querySelector(".newpill"),
     };
+    const tabs = [...el.querySelectorAll('.subtabs [role="tab"]')], pages = [...el.querySelectorAll(".subpager > .page")];
+    pager = createPager({
+      tabbar: el.querySelector(".subtabs"), pager: el.querySelector(".subpager"), tabs, pages,
+      onSettle: (i) => { ui.gameSub = SUBTABS[i][0]; },
+      onReselect: (i) => pages[i].scrollTo({ top: 0 }),
+    });
+    el.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-gplays]");
+      if (!b || b.dataset.gplays === (ui.gamePlays ?? "all")) return;
+      ui.gamePlays = b.dataset.gplays;
+      for (const x of el.querySelectorAll("[data-gplays]")) x.setAttribute("aria-pressed", String(x === b));
+      feed?.setFilter((c) => c.gameId === id && playFilter()(c));
+    });
   }
 
   // The parts that change with every play.
@@ -80,9 +108,9 @@ export function createGameLayer({ el, ui, order = () => [] }) {
     text(parts.sub, subText(g, now()));
     set(parts.field, g.state === "in" && g.offense && g.yardsToGoal != null ? fieldSvg(g) : "");
     parts.field.hidden = !parts.field._h;
-    set(parts.guys, guysHTML(g, ctx.snap));
+    set(parts.guys, guysHTML(g, ctx.snap) || `<p class="empty">Nobody in your matchup plays in this game.</p>`);
     const mo = ui.tracker.momentum(g.id);
-    set(parts.momentum, mo.length > 1 ? momentumSvg(g, mo) : "");
+    set(parts.momentum, mo.length > 1 ? momentumSvg(g, mo) : `<p class="empty">The momentum line starts with the first play.</p>`);
     // ‹ › go round the frozen order (from the last game, › goes back to the first).
     const ids = order(), k = ids.indexOf(g.id);
     const pick = (step) => {
@@ -103,20 +131,22 @@ export function createGameLayer({ el, ui, order = () => [] }) {
   function fill(gid, ctx) {
     const g = ctx.snap.games.find((x) => x.id === gid);
     if (!g) return false;
-    if (!parts) skeleton();
+    const fresh = !parts;
+    if (fresh) skeleton();
     id = gid;
     feed?.destroy();
     parts.guys._h = parts.momentum._h = parts.field._h = null;
     paint(g, ctx);
     feed = createFeedList(parts.feed, {
-      root: parts.body,
+      root: parts.plays,
       source: () => ui.tracker.feed(),
-      filter: (c) => c.gameId === gid,
+      filter: (c) => c.gameId === gid && playFilter()(c),
       pill: parts.pill,
       emptyText: () => (g.state === "pre" ? `No plays yet. Kickoff is ${kickoffShort(g, now())}.` : "No plays yet."),
     });
     feed.reset();
-    parts.body.scrollTop = 0;
+    for (const pg of el.querySelectorAll(".subpager > .page")) pg.scrollTop = 0;
+    if (fresh) pager.start(Math.max(0, SUBTABS.findIndex((t) => t[0] === (ui.gameSub ?? "plays"))));
     return true;
   }
 
@@ -128,7 +158,8 @@ export function createGameLayer({ el, ui, order = () => [] }) {
       el.hidden = false;
       return true;
     },
-    close() { id = null; feed?.destroy(); feed = null; parts = null; el.hidden = true; el.innerHTML = ""; },
+    close() { id = null; feed?.destroy(); feed = null; pager?.destroy(); pager = null; parts = null; el.hidden = true; el.innerHTML = ""; },
+    get swiping() { return pager?.state.swiping ?? false; },
     reset(ctx) { return !id || fill(id, ctx); },
     update(ctx, fresh) {
       if (!id) return;

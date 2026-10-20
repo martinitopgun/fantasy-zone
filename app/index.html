@@ -264,7 +264,10 @@ button:active { opacity: .75; }
 .tile .flame { font: 700 12px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--hot); white-space: nowrap; }
 
 /* ---- Game layer (covers the tabs; on wide screens only the last column) ---- */
-.layer { grid-row: tabs-start / main-end; grid-column: 1; z-index: 8; min-height: 0; background: var(--turf); display: grid; grid-template-rows: auto auto minmax(0, 1fr); }
+.layer { grid-row: tabs-start / main-end; grid-column: 1; z-index: 8; min-height: 0; background: var(--turf); display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
+.layer .subtabs { grid-area: auto; }
+.layer .subpager { min-height: 0; }
+.gguys, .gmomentum { padding-top: 10px; }
 .layer-head { display: flex; align-items: center; gap: 4px; min-height: 48px; padding: 0 var(--gut-r) 0 calc(var(--gut-l) - 8px); border-bottom: 1px solid var(--line); }
 .layer .back { font-size: 28px; font-weight: 500; }
 .layer .back .dk, .shell.dash .layer .back .ph { display: none; }

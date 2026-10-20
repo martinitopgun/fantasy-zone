@@ -340,7 +340,7 @@ function tick(cards) {
     ui.pending.push(...cards.filter((c) => !c.silent));
     ui.dirty = true;
   }
-  if (!ui.dirty || mainPager.state.swiping || document.hidden) return; // never write mid-swipe
+  if (!ui.dirty || mainPager.state.swiping || gameLayer.swiping || document.hidden) return; // never write mid-swipe
   flush();
 }
 
