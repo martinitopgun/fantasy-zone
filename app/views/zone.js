@@ -6,7 +6,7 @@
 
 import { esc } from "./cards.js";
 import { createFeedList } from "../ui/feed.js";
-import { FEED_FILTERS, feedFilter, onFieldVM } from "../src/view-models.js";
+import { feedFilters, feedFilter, onFieldVM } from "../src/view-models.js";
 import { REPLAY_NOTE } from "./sheets.js";
 import { windows } from "../src/replay.js";
 
@@ -14,6 +14,7 @@ const EMPTY = {
   mine: "No plays for your matchup yet. They show up here the moment your players or your opponent's touch the ball.",
   all: "No plays yet. Kickoff is coming.",
   big: "No big plays yet. Touchdowns, turnovers, long gains and big swings in your win chance show up here.",
+  close: "No plays from close games yet.",
 };
 
 export function createZoneView({ ui, store }) {
@@ -38,6 +39,13 @@ export function createZoneView({ ui, store }) {
     if (!w) return base;
     const ids = new Set(w.games);
     return (c) => ids.has(c.gameId) && base(c);
+  }
+
+  // The chips: My matchup / All / Big, or with fantasy off All / Big / Close games.
+  function fillChips() {
+    const list = feedFilters(ui.fantasyOn);
+    if (!list.some(([k]) => k === ui.filter)) ui.filter = ui.fantasyOn ? "mine" : "all";
+    page.querySelector(".fchips").innerHTML = list.map(([k, l]) => `<button class="chipbtn" type="button" data-filter="${k}" aria-pressed="${ui.filter === k}">${esc(l)}</button>`).join("");
   }
 
   function setFilter(kind) {
@@ -65,7 +73,7 @@ export function createZoneView({ ui, store }) {
         <div class="page-head">
           <div class="colhead"><h2 class="coltitle" id="col-zone" tabindex="-1">Zone</h2><span class="colpick-slot"></span></div>
           <div class="filters" role="group" aria-label="Which plays">
-            ${FEED_FILTERS.map(([k, l]) => `<button class="chipbtn" type="button" data-filter="${k}" aria-pressed="${ui.filter === k}">${esc(l)}</button>`).join("")}
+            <span class="fchips"></span>
             <label class="when"><span class="sr-only">When</span><select data-when aria-label="Which kickoff window"></select></label>
           </div>
           <div class="onfield" data-onfield hidden></div>
@@ -79,6 +87,7 @@ export function createZoneView({ ui, store }) {
       note = page.querySelector("[data-note]");
       firstrun = page.querySelector("[data-firstrun]");
       onfield = page.querySelector("[data-onfield]");
+      fillChips();
       when = page.querySelector("[data-when]");
       when.addEventListener("change", () => { ui.when = when.value; store.set("when", ui.when); feed.setFilter(currentFilter()); });
       feed = createFeedList(page.querySelector("[data-feed]"), {
@@ -96,6 +105,12 @@ export function createZoneView({ ui, store }) {
     },
     reset(ctx) { fillWhen(); feed.reset(); showFirstRun(); if (ctx) paintOnField(ctx); },
     update(ctx, fresh) { if (fresh?.length) feed.add(fresh); paintOnField(ctx); },
+    // Fantasy turned on or off: new chips (keeping your pick when it still exists), on-the-field line.
+    fantasyChanged(ctx) {
+      fillChips();
+      feed.setFilter(currentFilter());
+      if (ctx) paintOnField(ctx);
+    },
     // A one-line note under the chips, e.g. why a deep link landed here. null clears it.
     note(html) { note.hidden = !html; note.innerHTML = html ?? ""; },
   };

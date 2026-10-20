@@ -71,9 +71,13 @@ export function clockPill(ms) {
 
 // The Zone's filter chips.
 export const FEED_FILTERS = [["mine", "My matchup"], ["all", "All"], ["big", "Big"]];
+// With fantasy off there's no "My matchup"; "Close games" keeps plays from games within 8 points at the time.
+export const FEED_FILTERS_OFF = [["all", "All"], ["big", "Big"], ["close", "Close games"]];
+export const feedFilters = (fantasyOn) => (fantasyOn ? FEED_FILTERS : FEED_FILTERS_OFF);
 export function feedFilter(kind) {
   if (kind === "mine") return (c) => c.impacts.length > 0;
   if (kind === "big") return (c) => c.big === true;
+  if (kind === "close") return (c) => c.kind !== "marker" && Math.abs(c.homeScore - c.awayScore) <= 8;
   return () => true;
 }
 

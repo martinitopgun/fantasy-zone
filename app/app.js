@@ -19,6 +19,8 @@ import { createGameLayer } from "./views/game.js";
 import { createRail } from "./ui/rail.js";
 import { buildIndex, search } from "./src/search.js";
 import { cardHTML } from "./views/cards.js";
+import { createAlerts, WP_ALERT } from "./src/alerts.js";
+import { createBanner } from "./ui/banner.js";
 
 const POLL_MS = 10_000;
 const TICK_MS = 250;
@@ -34,7 +36,9 @@ const ui = {
   pin: store.get("pin", null), // the game in the phone pin bar
   mode: null, hasServer: false,
   // where you are
-  tab: null, tabIds: [], pages: {}, scroll: {}, cols: null, pick: store.get("pick", null), fantasyOn: true,
+  tab: null, tabIds: [], pages: {}, scroll: {}, cols: null, pick: store.get("pick", null), fantasyOn: store.get("fantasy", true) !== false,
+  settings: { banners: store.get("banners", true) !== false },
+  badges: { zone: 0, matchup: false }, seenWp: null, // tab badges (plan M4)
   // replay controls and the Zone filter
   filter: store.get("filter", "mine"),
   speed: SPEEDS.includes(store.get("speed", 1)) ? store.get("speed", 1) : 1, paused: false,
@@ -52,6 +56,7 @@ const ui = {
 // ---------- Shell ----------
 
 const shell = $("#shell"), tabbar = $("#tabbar"), pagerEl = $("#pager"), main = $("#main"), boot = $("#boot"), layerEl = $("#layer");
+shell.classList.toggle("nofantasy", !ui.fantasyOn);
 const appbar = createAppbar({ el: $("#appbar"), ui });
 // Layers and sheets share one stack with Back-button steps. Forward (to a layer's step) reopens it from the address.
 const layers = createLayers({ ui, onForward: (hash, st) => (st?.sheet ? SHEETS[st.sheet] && openSheet(st.sheet) : route(hash, { smooth: false })) });
@@ -183,6 +188,7 @@ function onSettle(i, { swipe } = {}) {
   const ctx = ui.tracker ? lazyCtx() : null;
   if (changed && ctx) tabOf(id).view.activate?.(ctx); // e.g. Games re-sorts when you arrive
   catchUp(ctx);
+  renderBadges(ctx);
 }
 
 function onReselect(i) {
@@ -339,6 +345,7 @@ function closeSheet(then) { if (layers.top()?.kind === "sheet") layers.back(then
 // On a phone the layer covers the tabs and pages; on a wide screen only the last column.
 function placeLayer() {
   const open = !!gameLayer.id;
+  renderBadges();
   tabbar.inert = open && !ui.cols;
   main.inert = open && !ui.cols;
   if (ui.cols) for (const id of ui.cols) ui.pages[id].inert = open && id === ui.cols.at(-1);
@@ -377,7 +384,50 @@ function flush() {
   catchUp(ctx);
   if (gameLayer.id) gameLayer.update(ctx, ui.pending);
   renderPin(ctx);
+  headsUp(ctx, ui.pending);
   ui.pending = [];
+}
+
+// ---------- Heads-up (plan M4): banners and tab badges ----------
+// A banner for a big moment in your matchup, unless you're already watching that game (it's open, or pinned
+// with its bar showing). Tabs you can't see collect a badge: Zone counts new My-matchup plays, Matchup gets a
+// dot when your win chance moved 5 points or the lead changed since you last looked. Nothing ever switches.
+const alerts = createAlerts();
+const banner = createBanner({ el: $("#alert"), announce: (t) => { $("#announce").textContent = t; } });
+function tabOnScreen(id) {
+  if (ui.cols) return ui.cols.includes(id) && !(gameLayer.id && ui.cols.at(-1) === id);
+  return ui.tab === id && !gameLayer.id;
+}
+
+function headsUp(ctx, fresh) {
+  const live = fresh.filter((c) => !c.silent);
+  const pinShown = !$("#pinbar").hidden;
+  const list = alerts.take(fresh, ctx.snap, { skip: [gameLayer.id, pinShown ? ui.pin : null].filter(Boolean) });
+  if (ui.fantasyOn) {
+    if (!tabOnScreen("zone")) ui.badges.zone += live.filter((c) => c.impacts.length > 0 && c.kind !== "marker").length;
+    if (list.some((a) => a.lead)) ui.badges.matchup = true;
+    if (ui.settings.banners && list.length) banner.show(list);
+  }
+  renderBadges(ctx);
+}
+
+function renderBadges(ctx = ui.tracker ? lazyCtx() : null) {
+  const m = ctx?.snap.matchups[0];
+  if (tabOnScreen("zone")) ui.badges.zone = 0;
+  if (m) {
+    if (tabOnScreen("matchup") || ui.seenWp == null) { ui.badges.matchup = false; ui.seenWp = m.winProb; }
+    else if (Math.abs(m.winProb - ui.seenWp) >= WP_ALERT) ui.badges.matchup = true;
+  }
+  for (const [id, label] of [["zone", ui.badges.zone ? `${ui.badges.zone > 99 ? "99+" : ui.badges.zone}` : ""], ["matchup", ui.badges.matchup ? "•" : ""]]) {
+    const b = document.getElementById(`tab-${id}`);
+    if (!b) continue;
+    let dot = b.querySelector(".tbadge");
+    if (!label) { dot?.remove(); b.removeAttribute("aria-description"); continue; }
+    if (!dot) { dot = document.createElement("span"); dot.className = "tbadge"; dot.setAttribute("aria-hidden", "true"); b.append(dot); }
+    dot.classList.toggle("dot", id === "matchup");
+    dot.textContent = id === "matchup" ? "" : label;
+    b.setAttribute("aria-description", id === "matchup" ? "Your win chance moved" : `${label} new plays`);
+  }
 }
 
 // Pin (phones): one game's score in a thin bar under the app bar, on every tab. It never opens anything by
@@ -414,6 +464,9 @@ function resetAll() {
   ui.lastWp.clear(); ui.wpDelta.clear();
   const ctx = lazyCtx();
   trackWp(ctx.snap);
+  alerts.prime(ctx.snap);
+  banner.hide();
+  ui.badges = { zone: 0, matchup: false }; ui.seenWp = null;
   appbar.update(ctx);
   rail.reset(ctx);
   for (const t of TABS) if (ui.pages[t.id]) t.view.reset(ctx);
@@ -517,8 +570,30 @@ const SHEETS = {
   find: () => findSheetHTML(),
   play: () => playSheetHTML(ui.tracker?.feed().find((c) => c.id === ui.playId)),
   player: () => (ui.findPick ? playerSheetHTML(ui.findPick, playerCards(ui.findPick), cardHTML) : ""),
-  settings: () => settingsSheetHTML(),
+  settings: () => settingsSheetHTML({ ui }),
 };
+
+// Fantasy on/off (Settings): Matchup and the score come and go, the chips change, the game chips re-rank
+// (by your players, or by drama). Matchup keeps its scroll spot for when it comes back.
+function setFantasy(on) {
+  ui.fantasyOn = on; store.set("fantasy", on);
+  shell.classList.toggle("nofantasy", !on);
+  views.zone.note(null);
+  buildTabs();
+  banner.hide(); ui.badges = { zone: 0, matchup: false };
+  if (!ui.tracker) return;
+  const ctx = lazyCtx();
+  views.zone.fantasyChanged(ctx);
+  appbar.update(ctx);
+  rail.reset(ctx);
+  renderBadges(ctx);
+}
+function refreshSettings() {
+  if (sheet.kind !== "settings") return;
+  const focus = document.activeElement?.dataset?.act;
+  sheet.body.querySelector(".setlist").outerHTML = new DOMParser().parseFromString(settingsSheetHTML({ ui }), "text/html").querySelector(".setlist").outerHTML;
+  if (focus) sheet.body.querySelector(`[data-act="${focus}"]`)?.focus();
+}
 
 function setSpeed(s) { ui.speed = s; ui.paused = false; store.set("speed", s); tick([]); }
 
@@ -550,7 +625,9 @@ document.addEventListener("click", (e) => {
     case "speed": return setSpeed(nextSpeed(ui.speed));
     case "open-games": return layers.closeAll(() => selectTab("games", { focus: true })); // "All games ›"
     case "change-user": return layers.closeAll(() => { ui.error = null; showSetup(); });
-    case "fantasy-on": ui.fantasyOn = true; buildTabs(); views.zone.note(null); return selectTab("matchup");
+    case "fantasy-on": setFantasy(true); return selectTab("matchup");
+    case "toggle-fantasy": setFantasy(!ui.fantasyOn); return refreshSettings();
+    case "toggle-banners": ui.settings.banners = !ui.settings.banners; store.set("banners", ui.settings.banners); if (!ui.settings.banners) banner.hide(); return refreshSettings();
   }
 });
 

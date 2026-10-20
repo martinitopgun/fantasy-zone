@@ -31,7 +31,7 @@ export function createAppbar({ el, ui }) {
 
   // Score bug + win bar; after every change in the data.
   function update(ctx) {
-    const m = ctx.snap.matchups[0];
+    const m = ui.fantasyOn ? ctx.snap.matchups[0] : null;
     if (!m) return clear();
     const opp = m.opponentName || "Opponent";
     set(score, `<span class="sb me"><span class="sbw">You</span><b class="sbn num">${n1(m.myNow)}</b><small class="sbp num">proj ${n1(m.myFinal)}</small></span>

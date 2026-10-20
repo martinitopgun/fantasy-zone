@@ -115,9 +115,15 @@ export function playerSheetHTML(entry, cards, cardHTML) {
     <div class="sheet-actions"><button class="chipbtn" type="button" data-close="sheet">Done</button></div>`;
 }
 
-export function settingsSheetHTML() {
+// Settings: switches that are remembered on this device.
+const SWITCH = (act, on, title, sub) => `<button class="setrow" type="button" role="switch" aria-checked="${on}" data-act="${act}">
+    <span><b>${title}</b><small>${sub}</small></span><i class="switch" aria-hidden="true"></i></button>`;
+export function settingsSheetHTML({ ui }) {
   return `<h2 class="sheet-title" id="sheet-title">Settings</h2>
-    <p>Settings arrive in a later step: fantasy on or off, banners for big plays, shapes for colour-blind viewers, and hiding the game chips.</p>
+    <div class="setlist">
+      ${SWITCH("toggle-fantasy", ui.fantasyOn, "Fantasy", "Your matchup, the score at the top, and ranking games by your players. Off: just football, ranked by how exciting each game is.")}
+      ${SWITCH("toggle-banners", ui.settings.banners, "Banners for big moments", "A short banner when something big happens in your matchup. It never switches what you're watching.")}
+    </div>
     <div class="sheet-actions"><button class="chipbtn" type="button" data-close="sheet">Done</button></div>`;
 }
 

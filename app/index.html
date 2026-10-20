@@ -60,7 +60,7 @@ button:active { opacity: .75; }
 .pinbtn { flex: none; padding: 6px 10px; } .pinbtn[aria-pressed="true"] { background: var(--you); color: var(--you-ink); border-color: var(--you); }
 .shell.dash .pinbtn { display: none; }
 .main { grid-area: main; min-height: 0; position: relative; }
-.alert { grid-row: tabs-start / main-end; grid-column: 1; align-self: start; justify-self: center; width: min(100% - 32px, 480px); margin-top: 6px; position: relative; z-index: 9; }
+.alert { grid-row: main-start / main-end; grid-column: 1; align-self: start; justify-self: center; width: min(100% - 32px, 480px); margin-top: 6px; position: relative; z-index: 9; }
 
 /* ---- App bar ---- */
 .appbar { grid-area: bar; position: relative; z-index: 6; display: flex; align-items: center; gap: 2px; height: 51px; padding: 0 var(--gut-r) 3px var(--gut-l); background: var(--turf); }
@@ -190,6 +190,32 @@ button:active { opacity: .75; }
 .play { display: grid; gap: 3px; padding: 10px 14px 11px; border-bottom: 1px solid var(--line); border-left: 3px solid transparent; text-align: left; width: 100%; background: none; border-top: 0; border-right: 0;
   content-visibility: auto; contain-intrinsic-size: auto 92px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .play:last-child { border-bottom: 0; }
+/* Heads-up banner (M4): one at a time under the tabs; yellow for your player, purple for theirs */
+.banner { display: flex; align-items: stretch; background: var(--panel); border: 1px solid var(--line); border-left: 5px solid var(--you); border-radius: 12px; box-shadow: 0 8px 24px rgb(0 0 0 / .28); overflow: hidden; animation: bannerIn .22s ease-out; touch-action: none; }
+.banner.opponent { border-left-color: var(--opp); }
+.banner-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 11px 12px; background: none; border: 0; text-align: left; color: var(--chalk); font: 700 16px/1.2 var(--display); letter-spacing: 0.01em; }
+.banner-t { flex: 1; min-width: 0; }
+.banner-more { flex: none; font: 600 12px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute); }
+.banner-x { flex: none; width: 44px; background: none; border: 0; border-left: 1px solid var(--line); color: var(--mute); font-size: 20px; }
+@keyframes bannerIn { from { translate: 0 -12px; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .banner { animation: none; } }
+/* Tab badges: a count on Zone, a dot on Matchup */
+.tabbar [role="tab"] { position: relative; }
+.tbadge { position: absolute; top: 6px; margin-left: 2px; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: var(--you); color: var(--turf); font: 700 11px/17px var(--display); letter-spacing: 0; }
+.tbadge.dot { min-width: 8px; width: 8px; height: 8px; padding: 0; top: 10px; }
+/* Settings switches */
+.setlist { display: grid; gap: 8px; margin: 8px 0 14px; }
+.setrow { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; text-align: left; color: var(--chalk); }
+.setrow b { display: block; font: 700 16px/1.2 var(--display); }
+.setrow small { display: block; margin-top: 3px; font-size: 13px; line-height: 1.35; color: var(--mute); }
+.setrow span { flex: 1; }
+.switch { flex: none; position: relative; width: 44px; height: 26px; border-radius: 999px; background: var(--line); transition: background .15s; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--chalk); transition: translate .15s; }
+.setrow[aria-checked="true"] .switch { background: var(--you); }
+.setrow[aria-checked="true"] .switch::after { translate: 18px 0; background: var(--turf); }
+/* Fantasy off: no yellow/purple on the plays */
+.nofantasy .pchips .chip.me, .nofantasy .pchips .chip.opponent, .nofantasy .pchips .chip.up, .nofantasy .pchips .chip.down { display: none; }
+.nofantasy .play.me, .nofantasy .play.opponent { border-left-color: transparent; }
 .play.me { border-left-color: var(--you); }
 .play.opponent { border-left-color: var(--opp); }
 .play.new { animation: arrive .6s ease-out; }
