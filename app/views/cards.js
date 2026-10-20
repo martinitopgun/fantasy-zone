@@ -24,7 +24,7 @@ export function cardHTML(c, isNew) {
   ];
   const name = c.name || c.offense || "";
   return `<article class="play ${owner} ${c.big ? "big" : ""} ${isNew ? "new" : ""}" data-game="${esc(c.gameId)}" data-id="${esc(c.id)}" tabindex="0" role="button" aria-label="${esc(`${name} ${c.label}, ${c.gameName}`)}">
-    <div class="pmeta">${score}<span>· Q${c.period > 4 ? "OT" : c.period} ${esc(c.clock)}</span>${c.situation ? `<span>· ${esc(c.situation)}</span>` : ""}</div>
+    <div class="pmeta">${score}<span>· ${c.period > 4 ? "OT" : "Q" + c.period} ${esc(c.clock)}</span>${c.situation ? `<span>· ${esc(c.situation)}</span>` : ""}</div>
     <div class="phead"><span class="pname">${esc(name)}</span><span class="plabel">${esc(c.label)}</span>${c.td ? `<span class="badge">TD</span>` : c.turnover ? `<span class="badge">Turnover</span>` : ""}</div>
     ${c.from ? `<div class="pfrom">${esc(c.from)}</div>` : ""}
     <div class="ptext">${esc(c.text)}</div>

@@ -6,6 +6,7 @@ import { esc } from "./cards.js";
 import { createFeedList } from "../ui/feed.js";
 import { FEED_FILTERS, feedFilter } from "../src/view-models.js";
 import { REPLAY_NOTE } from "./sheets.js";
+import { windows } from "../src/replay.js";
 
 const EMPTY = {
   mine: "No plays for your matchup yet. They show up here the moment your players or your opponent's touch the ball.",
@@ -14,13 +15,34 @@ const EMPTY = {
 };
 
 export function createZoneView({ ui, store }) {
-  let page, feed, note, firstrun;
+  let page, feed, note, firstrun, when, wins = [];
+  ui.when ??= store.get("when", "all");
+
+  // When: only the plays from one kickoff window (the 1 PM games, the 4 PM games, ...), by the game's kickoff.
+  function kickoffWindows() {
+    if (ui.replayData) return windows(ui.replayData);
+    const games = ui.tracker?.snapshot().games ?? [];
+    return windows({ games, plays: games.filter((g) => g.state !== "pre").map((g) => ({ gameId: g.id })) });
+  }
+  function fillWhen() {
+    wins = kickoffWindows();
+    const opts = [["all", "All day"], ...wins.map((w) => [String(w.kickoff), `${w.label} ${w.games.length === 1 ? "game" : "games"}`])];
+    if (!opts.some(([v]) => v === ui.when)) ui.when = "all";
+    when.innerHTML = opts.map(([v, l]) => `<option value="${v}"${v === ui.when ? " selected" : ""}>${esc(l)}</option>`).join("");
+  }
+  function currentFilter() {
+    const base = feedFilter(ui.filter);
+    const w = wins.find((x) => String(x.kickoff) === ui.when);
+    if (!w) return base;
+    const ids = new Set(w.games);
+    return (c) => ids.has(c.gameId) && base(c);
+  }
 
   function setFilter(kind) {
     ui.filter = kind;
     store.set("filter", kind);
     for (const b of page.querySelectorAll("[data-filter]")) b.setAttribute("aria-pressed", String(b.dataset.filter === kind));
-    feed.setFilter(feedFilter(kind));
+    feed.setFilter(currentFilter());
   }
 
   function showFirstRun() {
@@ -36,6 +58,7 @@ export function createZoneView({ ui, store }) {
           <div class="colhead"><h2 class="coltitle" id="col-zone" tabindex="-1">Zone</h2><span class="colpick-slot"></span></div>
           <div class="filters" role="group" aria-label="Which plays">
             ${FEED_FILTERS.map(([k, l]) => `<button class="chipbtn" type="button" data-filter="${k}" aria-pressed="${ui.filter === k}">${esc(l)}</button>`).join("")}
+            <label class="when"><span class="sr-only">When</span><select data-when aria-label="Which kickoff window"></select></label>
           </div>
           <p class="note" data-note hidden></p>
           <button class="newpill" type="button" hidden></button>
@@ -46,10 +69,12 @@ export function createZoneView({ ui, store }) {
         <div data-feed></div>`);
       note = page.querySelector("[data-note]");
       firstrun = page.querySelector("[data-firstrun]");
+      when = page.querySelector("[data-when]");
+      when.addEventListener("change", () => { ui.when = when.value; store.set("when", ui.when); feed.setFilter(currentFilter()); });
       feed = createFeedList(page.querySelector("[data-feed]"), {
         root: page,
         source: () => ui.tracker?.feed() ?? [],
-        filter: feedFilter(ui.filter),
+        filter: (c) => currentFilter()(c),
         pill: page.querySelector(".newpill"),
         emptyText: () => (ui.tracker ? EMPTY[ui.filter] ?? EMPTY.all : "Loading…"),
       });
@@ -59,7 +84,7 @@ export function createZoneView({ ui, store }) {
         if (e.target.closest("[data-dismiss]")) { firstrun.hidden = true; store.set("replayNoteSeen", true); }
       });
     },
-    reset() { feed.reset(); showFirstRun(); },
+    reset() { fillWhen(); feed.reset(); showFirstRun(); },
     update(ctx, fresh) { if (fresh?.length) feed.add(fresh); },
     // A one-line note under the chips, e.g. why a deep link landed here. null clears it.
     note(html) { note.hidden = !html; note.innerHTML = html ?? ""; },

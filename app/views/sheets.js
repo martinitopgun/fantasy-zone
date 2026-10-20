@@ -76,7 +76,7 @@ export function playSheetHTML(c) {
   if (!c) return `<h2 class="sheet-title" id="sheet-title">Play</h2><p>That play isn't here any more.</p>`;
   const wins = c.wp.filter((w) => Math.abs(w.after - w.before) >= 0.005);
   return `<h2 class="sheet-title" id="sheet-title">${esc(c.name || c.offense || "")} <span class="plabel">${esc(c.label)}</span></h2>
-    <p class="label num">${esc(c.away)} ${c.awayScore} – ${esc(c.home)} ${c.homeScore} · Q${c.period > 4 ? "OT" : c.period} ${esc(c.clock)}${c.situation ? ` · ${esc(c.situation)}` : ""}</p>
+    <p class="label num">${esc(c.away)} ${c.awayScore} – ${esc(c.home)} ${c.homeScore} · ${c.period > 4 ? "OT" : "Q" + c.period} ${esc(c.clock)}${c.situation ? ` · ${esc(c.situation)}` : ""}</p>
     <p class="sheet-play">${esc(c.text)}</p>
     ${c.impacts.map((i) => `<section class="breakdown ${i.owner}">
       <h3><span>${esc(i.name)} <small>· ${i.owner === "me" ? "your" : "their"} ${esc(i.pos === "DEF" ? "D/ST" : i.pos)}</small></span><b class="num">${i.delta > 0 ? "+" : ""}${n1(i.delta)}</b></h3>
