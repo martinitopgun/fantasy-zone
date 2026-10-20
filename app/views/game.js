@@ -58,6 +58,7 @@ export function createGameLayer({ el, ui, order = () => [] }) {
       <div class="layer-head">
         <button class="iconbtn back" type="button" data-close="layer" aria-label="Close this game"><span class="ph" aria-hidden="true">‹</span><span class="dk" aria-hidden="true">×</span></button>
         <div class="gtitle"><h2 id="layer-title"><span class="gt-name num"></span> <span class="gt-clock num"></span></h2><p class="gt-sub num"></p></div>
+        <button class="chipbtn pinbtn" type="button" data-act="pin" aria-pressed="false">Pin</button>
         <span class="seg gnav" role="group" aria-label="Other live games">
           <button type="button" data-step="-1">${CHEV(-1)}</button><button type="button" data-step="1">${CHEV(1)}</button>
         </span>
@@ -82,6 +83,7 @@ export function createGameLayer({ el, ui, order = () => [] }) {
       </div>`;
     parts = {
       name: el.querySelector(".gt-name"), clock: el.querySelector(".gt-clock"), sub: el.querySelector(".gt-sub"),
+      pin: el.querySelector('[data-act="pin"]'),
       prev: el.querySelector('[data-step="-1"]'), next: el.querySelector('[data-step="1"]'),
       field: el.querySelector("[data-field]"), guys: el.querySelector("[data-guys]"), momentum: el.querySelector("[data-momentum]"),
       plays: el.querySelector("#gpage-plays"), feed: el.querySelector("[data-feed]"), pill: el.querySelector(".newpill"),
@@ -106,6 +108,12 @@ export function createGameLayer({ el, ui, order = () => [] }) {
     text(parts.name, scoreName(g));
     text(parts.clock, stateText(g, now()));
     text(parts.sub, subText(g, now()));
+    const pinned = ui.pin === g.id;
+    if (parts.pin.getAttribute("aria-pressed") !== String(pinned)) {
+      parts.pin.setAttribute("aria-pressed", String(pinned));
+      parts.pin.textContent = pinned ? "Pinned" : "Pin";
+      parts.pin.setAttribute("aria-label", pinned ? "Unpin this game" : "Pin this game's score to the top of every tab");
+    }
     set(parts.field, g.state === "in" && g.offense && g.yardsToGoal != null ? fieldSvg(g) : "");
     parts.field.hidden = !parts.field._h;
     set(parts.guys, guysHTML(g, ctx.snap) || `<p class="empty">Nobody in your matchup plays in this game.</p>`);

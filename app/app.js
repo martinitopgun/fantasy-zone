@@ -7,7 +7,7 @@
 
 import { rankGames, DIALS } from "./src/model.js";
 import { createReplay, windows } from "./src/replay.js";
-import { columnsFor, visibleTabs, nearTabs, nextSpeed, SPEEDS } from "./src/view-models.js";
+import { columnsFor, visibleTabs, nearTabs, nextSpeed, SPEEDS, gameClock } from "./src/view-models.js";
 import { createPager } from "./ui/pager.js";
 import { H, createSheet, createLayers } from "./ui/layers.js";
 import { createAppbar } from "./views/appbar.js";
@@ -31,6 +31,7 @@ const store = {
 };
 
 const ui = {
+  pin: store.get("pin", null), // the game in the phone pin bar
   mode: null, hasServer: false,
   // where you are
   tab: null, tabIds: [], pages: {}, scroll: {}, cols: null, pick: store.get("pick", null), fantasyOn: true,
@@ -341,6 +342,7 @@ function placeLayer() {
   tabbar.inert = open && !ui.cols;
   main.inert = open && !ui.cols;
   if (ui.cols) for (const id of ui.cols) ui.pages[id].inert = open && id === ui.cols.at(-1);
+  renderPin();
 }
 
 // ---------- Update loop (plan B1.10) ----------
@@ -374,7 +376,26 @@ function flush() {
   }
   catchUp(ctx);
   if (gameLayer.id) gameLayer.update(ctx, ui.pending);
+  renderPin(ctx);
   ui.pending = [];
+}
+
+// Pin (phones): one game's score in a thin bar under the app bar, on every tab. It never opens anything by
+// itself; it hides while that game is open, and on wide screens (where games stay open in their column).
+function renderPin(ctx = ui.tracker ? lazyCtx() : null) {
+  const bar = $("#pinbar");
+  const g = ui.pin && ctx?.snap.games.find((x) => x.id === ui.pin);
+  bar.hidden = !g || !!ui.cols || gameLayer.id === ui.pin;
+  if (bar.hidden) return;
+  if (bar.dataset.game !== g.id) {
+    bar.dataset.game = g.id;
+    bar.innerHTML = `<button class="pin-open" type="button" data-game="${g.id}"><span class="pin-l">Pinned</span><span class="pin-t num"></span></button><button class="pin-x" type="button" data-act="unpin" aria-label="Unpin ${g.away} @ ${g.home}">×</button>`;
+  }
+  const mine = ctx.snap.matchups.flatMap((m) => [...m.mine, ...m.theirs]).filter((p) => p.game?.id === g.id && p.pos !== "DEF").map((p) => p.name.split(" ").slice(-1)[0]);
+  const state = g.state === "pre" ? "Kickoff later" : g.state === "post" ? "Final" : gameClock(g);
+  const t = [`${g.away} ${g.awayScore}-${g.homeScore} ${g.home}`, state, ...mine.slice(0, 2)].join(" · ");
+  const el = bar.querySelector(".pin-t");
+  if (el.textContent !== t) el.textContent = t;
 }
 
 // Win chance before the last move, for the ▲▼ next to it.
@@ -523,6 +544,8 @@ document.addEventListener("click", (e) => {
   if (t.dataset.mode === "live") return layers.closeAll(() => (ui.username ? startLive() : showSetup()));
   switch (t.dataset.act) {
     case "pause": ui.paused = !ui.paused; return tick([]);
+    case "pin": ui.pin = ui.pin === gameLayer.id ? null : gameLayer.id; store.set("pin", ui.pin); gameLayer.update(lazyCtx(), []); return renderPin();
+    case "unpin": ui.pin = null; store.set("pin", null); return renderPin();
     case "speed": return setSpeed(nextSpeed(ui.speed));
     case "open-games": return layers.closeAll(() => selectTab("games", { focus: true })); // "All games ›"
     case "change-user": return layers.closeAll(() => { ui.error = null; showSetup(); });

@@ -51,7 +51,14 @@ button:active { opacity: .75; }
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto auto auto minmax(0, 1fr);
   grid-template-areas: "bar" "pin" "rail" "tabs" "main"; }
-.pinbar { grid-area: pin; height: 36px; }
+.pinbar { grid-area: pin; height: 36px; display: flex; align-items: center; gap: 4px; padding: 0 var(--gut-r) 0 var(--gut-l); background: var(--panel); border-bottom: 1px solid var(--line); }
+.pin-open { flex: 1 1 auto; min-width: 0; height: 36px; display: flex; align-items: center; gap: 8px; background: none; border: 0; text-align: left; white-space: nowrap; overflow: hidden; }
+.pin-open > * { pointer-events: none; }
+.pin-l { font: 700 11px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--you); }
+.pin-t { font: 600 14px/1 var(--display); letter-spacing: 0.02em; overflow: hidden; text-overflow: ellipsis; }
+.pin-x { flex: none; width: 36px; height: 36px; background: none; border: 0; font-size: 20px; color: var(--mute); }
+.pinbtn { flex: none; padding: 6px 10px; } .pinbtn[aria-pressed="true"] { background: var(--you); color: var(--you-ink); border-color: var(--you); }
+.shell.dash .pinbtn { display: none; }
 .main { grid-area: main; min-height: 0; position: relative; }
 .alert { grid-row: tabs-start / main-end; grid-column: 1; align-self: start; justify-self: center; width: min(100% - 32px, 480px); margin-top: 6px; position: relative; z-index: 9; }
 
