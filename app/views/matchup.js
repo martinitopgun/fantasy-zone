@@ -3,8 +3,8 @@
 // points so far and where his game is:
 //   ○ yet to play (with the day and time, "MON 8:15 PM · yet to play")   ● playing
 //   ◉ his team has the ball (a defense: it's on the field)              ✓ his game is over
-// Chips: [Lineup] and [Swings] (your win chance through the day, the plays that moved it most). Story and
-// What-if arrive with their own steps, so there are no empty chips. The hero also says how sweaty it is and
+// Chips: [Lineup] and [Swings] (your win chance through the day, the plays that moved it most), and [Story ›]
+// (your day in 6 cards). What-if arrives with its own step, so there are no empty chips. The hero also says how sweaty it is and
 // what you still need. Everything is changed in place on each update; nothing here moves by itself.
 
 import { esc, pct, n1 } from "./cards.js";
@@ -98,7 +98,7 @@ export function createMatchupView({ ui }) {
       el.insertAdjacentHTML("beforeend", `
         <div class="page-head"><div class="colhead"><h2 class="coltitle" id="col-matchup" tabindex="-1">Matchup</h2><span class="colpick-slot"></span></div></div>
         <section class="mhero" data-hero aria-label="Score and win chance"><p class="empty">Loading…</p></section>
-        <div class="mseg"><span class="seg" role="group" aria-label="Matchup view"><button type="button" data-mview="lineup" aria-pressed="true">Lineup</button><button type="button" data-mview="swings" aria-pressed="false">Swings</button></span></div>
+        <div class="mseg"><span class="seg" role="group" aria-label="Matchup view"><button type="button" data-mview="lineup" aria-pressed="true">Lineup</button><button type="button" data-mview="swings" aria-pressed="false">Swings</button></span><button class="chipbtn storybtn" type="button" data-act="story">Story ›</button></div>
         <ol class="lineup" data-rows aria-label="Starters, yours on the left, theirs on the right"></ol>
         <section class="mswings" data-swings hidden></section>`);
       page = el;

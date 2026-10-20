@@ -11,7 +11,7 @@ import { columnsFor, visibleTabs, nearTabs, nextSpeed, SPEEDS, gameClock } from 
 import { createPager } from "./ui/pager.js";
 import { H, createSheet, createLayers } from "./ui/layers.js";
 import { createAppbar } from "./views/appbar.js";
-import { clockSheetHTML, refreshClockSheet, liveSheetHTML, findSheetHTML, findResultsHTML, playerSheetHTML, playSheetHTML, settingsSheetHTML, setupHTML } from "./views/sheets.js";
+import { clockSheetHTML, refreshClockSheet, liveSheetHTML, findSheetHTML, findResultsHTML, playerSheetHTML, playSheetHTML, settingsSheetHTML, setupHTML, pictureSheetHTML } from "./views/sheets.js";
 import { createZoneView } from "./views/zone.js";
 import { createMatchupView } from "./views/matchup.js";
 import { createGamesView } from "./views/games.js";
@@ -21,6 +21,8 @@ import { buildIndex, search } from "./src/search.js";
 import { cardHTML } from "./views/cards.js";
 import { createAlerts, WP_ALERT } from "./src/alerts.js";
 import { createBanner } from "./ui/banner.js";
+import { createStory } from "./views/story.js";
+import { storyCards } from "./src/story.js";
 
 const POLL_MS = 10_000;
 const TICK_MS = 250;
@@ -60,7 +62,7 @@ shell.classList.toggle("nofantasy", !ui.fantasyOn);
 const appbar = createAppbar({ el: $("#appbar"), ui });
 // Layers and sheets share one stack with Back-button steps. Forward (to a layer's step) reopens it from the address.
 const layers = createLayers({ ui, onForward: (hash, st) => (st?.sheet ? SHEETS[st.sheet] && openSheet(st.sheet) : route(hash, { smooth: false })) });
-const sheet = createSheet({ sheet: $("#sheet"), backdrop: $("#backdrop"), others: () => [$("#appbar"), $("#pinbar"), $("#rail"), tabbar, main, layerEl], onDismiss: () => closeSheet() });
+const sheet = createSheet({ sheet: $("#sheet"), backdrop: $("#backdrop"), others: () => [$("#appbar"), $("#pinbar"), $("#rail"), tabbar, main, layerEl, $("#story")], onDismiss: () => closeSheet() });
 const gameLayer = createGameLayer({ el: layerEl, ui, order: () => ui.gameOrder });
 // The game chips between the app bar and the tabs. Their order only changes on a jump, Live/Replay or ↻.
 const rail = createRail({ el: $("#rail"), getCtx: () => (ui.tracker ? lazyCtx() : null), current: () => gameLayer.id, now: () => ui.replay?.time ?? Date.now() });
@@ -311,6 +313,34 @@ function openGame(id) {
   return true;
 }
 
+// Sunday Story (plan M5): full screen over everything, with its own Back step.
+const story = createStory({ el: $("#story"), onClose: () => layers.back(), onPicture: (url) => { ui.picture = url; openSheet("picture"); } });
+const storyNow = (ctx) => {
+  const m = ctx.snap.matchups[0];
+  return m ? storyCards({ m, history: ui.tracker.history(m.league.league_id), feed: ui.tracker.feed() }) : null;
+};
+function openStory() {
+  if (!ui.tracker || layers.has("story")) return;
+  const s = storyNow(lazyCtx());
+  if (!s) return;
+  const opener = document.activeElement;
+  let saved = [];
+  layers.open({
+    kind: "story",
+    show() {
+      banner.hide();
+      saved = [$("#appbar"), $("#pinbar"), $("#rail"), tabbar, main, layerEl, $("#alert")].map((el) => [el, el.inert]);
+      for (const [el] of saved) el.inert = true;
+      story.open(s);
+    },
+    hide() {
+      story.close();
+      for (const [el, was] of saved) el.inert = was;
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    },
+  }, "#story");
+}
+
 // ‹ › in the game's head, and the [ ] keys.
 function stepGame(dir) {
   const to = layerEl.querySelector(`[data-step="${dir}"]`)?.dataset.to;
@@ -385,6 +415,7 @@ function flush() {
   if (gameLayer.id) gameLayer.update(ctx, ui.pending);
   renderPin(ctx);
   headsUp(ctx, ui.pending);
+  if (story.isOpen && ui.pending.length) story.update(storyNow(ctx));
   ui.pending = [];
 }
 
@@ -571,6 +602,7 @@ const SHEETS = {
   play: () => playSheetHTML(ui.tracker?.feed().find((c) => c.id === ui.playId)),
   player: () => (ui.findPick ? playerSheetHTML(ui.findPick, playerCards(ui.findPick), cardHTML) : ""),
   settings: () => settingsSheetHTML({ ui }),
+  picture: () => pictureSheetHTML(ui.picture),
 };
 
 // Fantasy on/off (Settings): Matchup and the score come and go, the chips change, the game chips re-rank
@@ -626,6 +658,7 @@ document.addEventListener("click", (e) => {
     case "open-games": return layers.closeAll(() => selectTab("games", { focus: true })); // "All games ›"
     case "change-user": return layers.closeAll(() => { ui.error = null; showSetup(); });
     case "fantasy-on": setFantasy(true); return selectTab("matchup");
+    case "story": return openStory();
     case "toggle-fantasy": setFantasy(!ui.fantasyOn); return refreshSettings();
     case "toggle-banners": ui.settings.banners = !ui.settings.banners; store.set("banners", ui.settings.banners); if (!ui.settings.banners) banner.hide(); return refreshSettings();
   }

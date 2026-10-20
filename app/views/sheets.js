@@ -115,6 +115,15 @@ export function playerSheetHTML(entry, cards, cardHTML) {
     <div class="sheet-actions"><button class="chipbtn" type="button" data-close="sheet">Done</button></div>`;
 }
 
+// The share picture, to save by hand: inside the claude.ai preview the share sheet and downloads may be blocked.
+export function pictureSheetHTML(url) {
+  const touch = matchMedia("(pointer: coarse)").matches;
+  return `<h2 class="sheet-title" id="sheet-title">Your picture</h2>
+    ${url ? `<img class="sharepic" src="${url}" alt="Your story card as a picture">` : ""}
+    <p class="sheet-note">${touch ? "Press and hold the picture to save or share it." : "Right-click the picture, then Save image."}</p>
+    <div class="sheet-actions"><button class="chipbtn" type="button" data-close="sheet">Done</button></div>`;
+}
+
 // Settings: switches that are remembered on this device.
 const SWITCH = (act, on, title, sub) => `<button class="setrow" type="button" role="switch" aria-checked="${on}" data-act="${act}">
     <span><b>${title}</b><small>${sub}</small></span><i class="switch" aria-hidden="true"></i></button>`;

@@ -203,6 +203,26 @@ button:active { opacity: .75; }
 .tabbar [role="tab"] { position: relative; }
 .tbadge { position: absolute; top: 6px; margin-left: 2px; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: var(--you); color: var(--turf); font: 700 11px/17px var(--display); letter-spacing: 0; }
 .tbadge.dot { min-width: 8px; width: 8px; height: 8px; padding: 0; top: 10px; }
+/* Sunday Story (M5): covers everything; tap halves to move, swipe down to close */
+.story { grid-row: 1 / -1; grid-column: 1 / -1; z-index: 12; position: relative; display: flex; flex-direction: column; background: radial-gradient(120% 80% at 50% 0%, var(--panel) 0%, var(--turf) 70%); padding: 10px var(--gut-r) 18px var(--gut-l); touch-action: none; }
+.story-top { position: relative; z-index: 2; max-width: 560px; width: 100%; margin: 0 auto; }
+.story-bars { display: flex; gap: 4px; }
+.story-bars span { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+.story-bars .done, .story-bars .on { background: var(--you); }
+.story-head { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+.story-head h2 { margin: 0; font: 700 15px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--mute); }
+.story-tap { position: absolute; top: 60px; bottom: 70px; width: 50%; z-index: 1; background: none; border: 0; padding: 0; }
+.story-tap.prev { left: 0; } .story-tap.next { right: 0; }
+.story-tap:disabled { cursor: default; }
+.story-card { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; max-width: 560px; width: 100%; margin: 0 auto; pointer-events: none; }
+.story-kicker { margin: 0; font: 700 22px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--you); }
+.story-big { margin: 0; font: 800 clamp(44px, 13vw, 84px)/1 var(--display); color: var(--chalk); overflow-wrap: anywhere; }
+.story-line { margin: 0; font: 500 19px/1.35 var(--body, inherit); color: var(--chalk); }
+.story-card.s-top .story-line { font: 700 22px/1.3 var(--display); }
+.story-foot { position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; max-width: 560px; width: 100%; margin: 0 auto; color: var(--mute); font: 600 14px/1 var(--display); }
+.mseg { display: flex; align-items: center; justify-content: space-between; }
+.storybtn { margin-left: auto; }
+.sharepic { display: block; width: min(100%, 360px); margin: 6px auto 10px; border-radius: 10px; border: 1px solid var(--line); }
 /* Settings switches */
 .setlist { display: grid; gap: 8px; margin: 8px 0 14px; }
 .setrow { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; text-align: left; color: var(--chalk); }
@@ -434,6 +454,7 @@ button:active { opacity: .75; }
     <div class="boot" id="boot"><p class="empty">Loading…</p></div>
   </main>
   <section class="layer" id="layer" role="region" aria-labelledby="layer-title" hidden></section>
+  <section class="story" id="story" role="dialog" aria-modal="true" aria-labelledby="story-title" hidden></section>
   <div class="alert" id="alert" hidden></div>
   <div class="backdrop" id="backdrop" hidden></div>
   <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden></section>
