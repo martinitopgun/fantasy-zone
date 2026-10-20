@@ -354,3 +354,21 @@ test("lineup at 3:42 PM matches the sketch in Part A", () => {
   assert.equal(vm.rows[0].mine.note, "MON 8:15 PM · yet to play");
   assert.equal(vm.rows[0].theirs.note, "4:25 PM · yet to play"); // same day: no weekday
 });
+
+test("onFieldVM: only skill players whose team has the ball in a live game, yours first", async () => {
+  const { onFieldVM } = await import("../src/view-models.js");
+  const g = (state, offense, red = false) => ({ id: "g1", state, offense, isRedZone: red });
+  const m = {
+    mine: [
+      { id: "1", name: "D'Andre Swift", pos: "RB", owner: "me", nflTeam: "CHI", game: g("in", "CHI", true) },
+      { id: "2", name: "Kicker Guy", pos: "K", owner: "me", nflTeam: "CHI", game: g("in", "CHI") },
+      { id: "3", name: "Done Guy", pos: "WR", owner: "me", nflTeam: "KC", game: g("post", null) },
+    ],
+    theirs: [
+      { id: "4", name: "Bijan Robinson", pos: "RB", owner: "opponent", nflTeam: "ATL", game: g("in", "CHI") },
+      { id: "5", name: "Other Guy", pos: "TE", owner: "opponent", nflTeam: "SF", game: g("in", "SF") },
+    ],
+  };
+  assert.deepEqual(onFieldVM(m).map((p) => [p.id, p.red]), [["1", true], ["5", false]]);
+  assert.deepEqual(onFieldVM(null), []);
+});

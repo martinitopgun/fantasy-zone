@@ -1,10 +1,12 @@
 // The Zone tab: the live play feed. Filter chips (My matchup / All / Big) stay pinned at the top; the
 // newest card is on top; scrolled down, new plays wait behind the "↑ N new plays" pill.
+// Under the chips, "On the field": your guys (yellow) and theirs (purple) whose team has the ball right now; a
+// tap opens that game. Hidden when nobody is out there.
 // The first time someone opens the replay, a dismissible note says it's a replay, not live.
 
 import { esc } from "./cards.js";
 import { createFeedList } from "../ui/feed.js";
-import { FEED_FILTERS, feedFilter } from "../src/view-models.js";
+import { FEED_FILTERS, feedFilter, onFieldVM } from "../src/view-models.js";
 import { REPLAY_NOTE } from "./sheets.js";
 import { windows } from "../src/replay.js";
 
@@ -15,7 +17,7 @@ const EMPTY = {
 };
 
 export function createZoneView({ ui, store }) {
-  let page, feed, note, firstrun, when, wins = [];
+  let page, feed, note, firstrun, when, onfield, wins = [];
   ui.when ??= store.get("when", "all");
 
   // When: only the plays from one kickoff window (the 1 PM games, the 4 PM games, ...), by the game's kickoff.
@@ -50,6 +52,12 @@ export function createZoneView({ ui, store }) {
     if (!firstrun.hidden) firstrun.querySelector("p").innerHTML = `${REPLAY_NOTE(ui.replayData?.user ?? "ontopgun")} Tap the clock at the top to jump to a kickoff or change the speed.`;
   }
 
+  function paintOnField(ctx) {
+    const list = ui.fantasyOn ? onFieldVM(ctx?.snap?.matchups[0]) : [];
+    const html = list.length ? `<span class="label">On the field</span>${list.map((p) => `<button type="button" class="ofchip ${p.owner}${p.red ? " red" : ""}" data-game="${esc(p.gameId)}" aria-label="${esc(`${p.name}, ${p.owner === "me" ? "yours" : "theirs"}, has the ball${p.red ? " in the red zone" : ""}. Open his game`)}">${esc(p.name.split(" ").slice(1).join(" ") || p.name)}<small>${esc(p.pos)}</small></button>`).join("")}` : "";
+    if (onfield._h !== html) { onfield.innerHTML = onfield._h = html; onfield.hidden = !html; }
+  }
+
   return {
     mount(el) {
       page = el;
@@ -60,6 +68,7 @@ export function createZoneView({ ui, store }) {
             ${FEED_FILTERS.map(([k, l]) => `<button class="chipbtn" type="button" data-filter="${k}" aria-pressed="${ui.filter === k}">${esc(l)}</button>`).join("")}
             <label class="when"><span class="sr-only">When</span><select data-when aria-label="Which kickoff window"></select></label>
           </div>
+          <div class="onfield" data-onfield hidden></div>
           <p class="note" data-note hidden></p>
           <button class="newpill" type="button" hidden></button>
         </div>
@@ -69,6 +78,7 @@ export function createZoneView({ ui, store }) {
         <div data-feed></div>`);
       note = page.querySelector("[data-note]");
       firstrun = page.querySelector("[data-firstrun]");
+      onfield = page.querySelector("[data-onfield]");
       when = page.querySelector("[data-when]");
       when.addEventListener("change", () => { ui.when = when.value; store.set("when", ui.when); feed.setFilter(currentFilter()); });
       feed = createFeedList(page.querySelector("[data-feed]"), {
@@ -84,8 +94,8 @@ export function createZoneView({ ui, store }) {
         if (e.target.closest("[data-dismiss]")) { firstrun.hidden = true; store.set("replayNoteSeen", true); }
       });
     },
-    reset() { fillWhen(); feed.reset(); showFirstRun(); },
-    update(ctx, fresh) { if (fresh?.length) feed.add(fresh); },
+    reset(ctx) { fillWhen(); feed.reset(); showFirstRun(); if (ctx) paintOnField(ctx); },
+    update(ctx, fresh) { if (fresh?.length) feed.add(fresh); paintOnField(ctx); },
     // A one-line note under the chips, e.g. why a deep link landed here. null clears it.
     note(html) { note.hidden = !html; note.innerHTML = html ?? ""; },
   };

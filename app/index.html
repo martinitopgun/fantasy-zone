@@ -290,6 +290,13 @@ button:active { opacity: .75; }
 .findrow > * { pointer-events: none; }
 .sheet-feed { margin-top: 10px; }
 .filters .when { margin-left: auto; }
+.onfield { display: flex; gap: 6px; align-items: center; overflow-x: auto; scrollbar-width: none; margin-top: 8px; }
+.onfield .label { flex: none; margin-right: 2px; }
+.ofchip { flex: none; display: inline-flex; gap: 5px; align-items: baseline; min-height: 28px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--chalk); font: 700 14px/1 var(--display); letter-spacing: 0.02em; }
+.ofchip small { font-size: 11px; color: var(--mute); letter-spacing: 0.06em; }
+.ofchip.me { border-color: var(--you); box-shadow: inset 3px 0 0 var(--you); }
+.ofchip.opponent { border-color: var(--opp); box-shadow: inset 3px 0 0 var(--opp); }
+.ofchip.red { background: color-mix(in srgb, var(--down) 18%, var(--panel)); }
 .filters .when select { height: 34px; max-width: 150px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--chalk); font: 600 13px/1 var(--display); letter-spacing: 0.04em; }
 .breakdown { border-left: 3px solid var(--line); padding: 6px 0 6px 10px; margin-block: 10px; }
 .breakdown.me { border-left-color: var(--you); } .breakdown.opponent { border-left-color: var(--opp); }

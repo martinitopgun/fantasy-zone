@@ -291,3 +291,14 @@ export function lineupVM(m, { now, statLine = () => null } = {}) {
     myNow: m.myNow, oppNow: m.oppNow, winProb: m.winProb,
   };
 }
+
+// "On the field now" (Zone's top line): your and your opponent's QB/RB/WR/TE whose team has the ball in a game
+// that's on. Yours first. red: his team is inside the 20.
+//   onFieldVM(m) -> [{ id, name, pos, owner, gameId, red }]
+const ON_FIELD = new Set(["QB", "RB", "WR", "TE"]);
+export function onFieldVM(m) {
+  if (!m) return [];
+  return [...m.mine, ...m.theirs]
+    .filter((p) => ON_FIELD.has(p.pos) && p.game?.state === "in" && p.game.offense && p.game.offense === p.nflTeam)
+    .map((p) => ({ id: p.id, name: p.name, pos: p.pos, owner: p.owner, gameId: p.game.id, red: !!p.game.isRedZone }));
+}
