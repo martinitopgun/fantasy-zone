@@ -3,7 +3,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { statText, sweat, needs, swings } from "../src/insights.js";
+import { statText, sweat, needs, swings, playerSwings, breakeven } from "../src/insights.js";
 
 test("statText: the plan's kicker and defense lines", () => {
   assert.equal(statText({ fgm: 2, fgm_30_39: 1, fgm_40_49: 1, xpm: 3 }, "K"), "2/2 FG, 3 XP");
@@ -46,4 +46,28 @@ test("swings: biggest moves first, only ones a play caused", () => {
   assert.deepEqual(s.map((x) => x.cardId), ["b", "a"]);
   assert.equal(s[0].from, 0.48);
   assert.ok(Math.abs(s[0].move + 0.18) < 1e-9);
+});
+
+test("needs: the plan's hand-built cases", () => {
+  assert.equal(needs({ myNow: 50, oppNow: 60, mine: side(25), theirs: side(10) }).need, 20);
+  assert.equal(needs({ myNow: 70, oppNow: 60, mine: side(0), theirs: side(0) }).need, 0);
+  assert.equal(needs({ myNow: 55, oppNow: 60, mine: side(0), theirs: side(0) }).need, 5);
+});
+
+test("playerSwings: no spread no swing, symmetric at an even matchup, sorted", () => {
+  const P = (id, owner, remaining, remainingSpread) => ({ id, name: id, owner, remaining, remainingSpread, game: { state: "pre" } });
+  const mine = [P("a", "me", 15, 8), P("z", "me", 10, 0)], theirs = [P("b", "opponent", 12, 6)];
+  const m = { myFinal: 100, oppFinal: 100, spread: Math.hypot(8, 6), mine, theirs };
+  const out = playerSwings(m);
+  assert.equal(out.find((x) => x.id === "z").swing, 0);
+  const a = out.find((x) => x.id === "a");
+  assert.ok(Math.abs((a.boom - 0.5) - (0.5 - a.bust)) < 0.001);
+  assert.deepEqual(out.map((x) => x.id), ["a", "b", "z"]);
+});
+
+test("breakeven: yours needs more than remaining minus your edge; theirs under remaining plus it", () => {
+  const m = { myFinal: 105, oppFinal: 100, spread: 10 };
+  assert.equal(breakeven(m, { owner: "me", remaining: 12 }), 7);
+  assert.equal(breakeven(m, { owner: "opponent", remaining: 12 }), 17);
+  assert.equal(breakeven(m, { owner: "me", remaining: 3 }), null); // favored even if he gets nothing
 });

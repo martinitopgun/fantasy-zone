@@ -9,7 +9,7 @@
 
 import { esc, pct, n1 } from "./cards.js";
 import { lineupVM } from "../src/view-models.js";
-import { sweat, needs, swings } from "../src/insights.js";
+import { sweat, needs, swings, playerSwings, breakeven } from "../src/insights.js";
 import { winChartSvg, winChartScale } from "./charts.js";
 import { cardHTML } from "./cards.js";
 import { windows } from "../src/replay.js";
@@ -32,7 +32,24 @@ export function createMatchupView({ ui }) {
         <div class="side opp"><span class="who">${esc(m.opponentName || "Opponent")}</span><b class="pts num">${n1(m.oppNow)}</b><span class="proj num">proj ${n1(m.oppFinal)}</span></div>
       </div>
       <div class="wpbar" aria-hidden="true"><span style="width:${(m.winProb * 100).toFixed(1)}%"></span></div>
-      ${insightHTML(m)}`;
+      ${insightHTML(m)}${playerSwingHTML(m)}`;
+  }
+
+  // "Biggest swing: Kittle (theirs) — his whole game is still to come. You're favored if he gets under 25.0."
+  // The next few open under it. Hidden once nobody can move your win chance by 1%.
+  function playerSwingHTML(m) {
+    const list = playerSwings(m).filter((x) => x.swing >= 0.01);
+    if (!list.length) return "";
+    const all = [...m.mine, ...m.theirs];
+    const line = (x) => {
+      const be = breakeven(m, all.find((p) => p.id === x.id));
+      const fav = be == null ? "" : x.owner === "me" ? ` You're favored if he gets ${n1(be)}+ more.` : ` You're favored if he gets under ${n1(be)}.`;
+      return `<b class="${x.owner}">${esc(x.name.split(" ").slice(1).join(" ") || x.name)}</b>${x.owner === "me" ? "" : " (theirs)"} — ${x.toCome === "whole" ? "his whole game is still to come" : "he's still playing"}.${esc(fav)}`;
+    };
+    const first = `<span class="label">Biggest swing</span> ${line(list[0])}`;
+    if (list.length === 1) return `<p class="mswing">${first}</p>`;
+    return `<details class="mswing"${ui.mswingOpen ? " open" : ""}><summary>${first} <span class="more" aria-hidden="true">more</span></summary>
+      ${list.slice(1, 4).map((x) => `<p>${line(x)}</p>`).join("")}</details>`;
   }
 
   // "FULL SWEAT · You need 99.0 more. Your 9 players left should get about 97.2."
@@ -86,6 +103,7 @@ export function createMatchupView({ ui }) {
         <section class="mswings" data-swings hidden></section>`);
       page = el;
       hero = el.querySelector("[data-hero]");
+      hero.addEventListener("toggle", (e) => { if (e.target.matches(".mswing")) ui.mswingOpen = e.target.open; }, true);
       rows = el.querySelector("[data-rows]");
       swingsEl = el.querySelector("[data-swings]");
       el.addEventListener("click", (e) => { const b = e.target.closest("[data-mview]"); if (b) setView(b.dataset.mview); });
