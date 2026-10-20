@@ -11,12 +11,14 @@ import { columnsFor, visibleTabs, nearTabs, nextSpeed, SPEEDS } from "./src/view
 import { createPager } from "./ui/pager.js";
 import { H, createSheet, createLayers } from "./ui/layers.js";
 import { createAppbar } from "./views/appbar.js";
-import { clockSheetHTML, refreshClockSheet, liveSheetHTML, findSheetHTML, playSheetHTML, settingsSheetHTML, setupHTML } from "./views/sheets.js";
+import { clockSheetHTML, refreshClockSheet, liveSheetHTML, findSheetHTML, findResultsHTML, playerSheetHTML, playSheetHTML, settingsSheetHTML, setupHTML } from "./views/sheets.js";
 import { createZoneView } from "./views/zone.js";
 import { createMatchupView } from "./views/matchup.js";
 import { createGamesView } from "./views/games.js";
 import { createGameLayer } from "./views/game.js";
 import { createRail } from "./ui/rail.js";
+import { buildIndex, search } from "./src/search.js";
+import { cardHTML } from "./views/cards.js";
 
 const POLL_MS = 10_000;
 const TICK_MS = 250;
@@ -314,9 +316,22 @@ function closeGame() { if (gameLayer.id && layers.top()?.kind === "game") layers
 function openSheet(kind) {
   if (kind === "clock" && !ui.replay) return;
   const html = SHEETS[kind]();
-  const entry = { kind: "sheet", state: { sheet: kind }, show: () => sheet.open(kind, html), hide: () => sheet.close() };
+  const entry = { kind: "sheet", state: { sheet: kind }, show: () => { sheet.open(kind, html); if (kind === "find") document.getElementById("find-q")?.focus(); }, hide: () => sheet.close() };
   if (layers.top()?.kind === "sheet") layers.swapTop(entry); else layers.open(entry);
 }
+// Find: results as you type; a player opens his plays, a game opens the game.
+function findIndex() {
+  const snap = ui.tracker.snapshot();
+  const lineups = snap.matchups.flatMap((m) => [...m.mine, ...m.theirs]).map((p) => ({ id: p.id, name: p.name, pos: p.pos, team: p.nflTeam, owner: p.owner }));
+  return buildIndex({ lineups, cards: ui.tracker.feed(), games: snap.games });
+}
+document.addEventListener("input", (e) => {
+  if (e.target.id !== "find-q" || !ui.tracker) return;
+  ui.findResults = search(findIndex(), e.target.value);
+  const list = document.querySelector("[data-find-results]");
+  if (list) list.innerHTML = findResultsHTML(ui.findResults, e.target.value);
+});
+const playerCards = (p) => ui.tracker.feed().filter((c) => c.kind !== "marker" && (p.id ? c.impacts.some((i) => i.id === p.id) || c.name === p.name : c.name === p.name));
 function openPlay(id) { ui.playId = id; openSheet("play"); }
 function closeSheet(then) { if (layers.top()?.kind === "sheet") layers.back(then); else then?.(); }
 
@@ -480,19 +495,21 @@ const SHEETS = {
   live: () => liveSheetHTML({ ui }),
   find: () => findSheetHTML(),
   play: () => playSheetHTML(ui.tracker?.feed().find((c) => c.id === ui.playId)),
+  player: () => (ui.findPick ? playerSheetHTML(ui.findPick, playerCards(ui.findPick), cardHTML) : ""),
   settings: () => settingsSheetHTML(),
 };
 
 function setSpeed(s) { ui.speed = s; ui.paused = false; store.set("speed", s); tick([]); }
 
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-game],[data-sheet],[data-act],[data-speed],[data-jump],[data-mode],[data-pick],[data-close],[data-step],#scorebug");
+  const t = e.target.closest("[data-find],[data-game],[data-sheet],[data-act],[data-speed],[data-jump],[data-mode],[data-pick],[data-close],[data-step],#scorebug");
   if (!t) return;
   if (t.id === "scorebug") { // your matchup, one tap from anywhere: whatever is open closes first, in one Back step
     return layers.closeAll(() => { if (ui.tabIds.includes("matchup")) selectTab("matchup", { focus: true }); });
   }
   if (t.dataset.close === "layer") return closeGame();
   if (t.dataset.step) return stepGame(Number(t.dataset.step));
+  if (t.dataset.find) { ui.findPick = ui.findResults?.[Number(t.dataset.find)]; return ui.findPick && openSheet("player"); }
   if (t.matches("article.play") && !ui.cols) return openPlay(t.dataset.id); // phones: the play's details first
   if (t.dataset.game) return openGame(t.dataset.game); // a game chip, a tile, a play card on a wide screen
   if (t.dataset.sheet) {

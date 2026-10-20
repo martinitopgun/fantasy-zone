@@ -90,12 +90,29 @@ export function playSheetHTML(c) {
 
 export function findSheetHTML() {
   return `<h2 class="sheet-title" id="sheet-title">Find</h2>
-    <p>Search for any player or game. This arrives in the next step.</p>
-    <p class="sheet-note">Until then, the Games tab lists every game, and tapping a play opens its game.</p>
-    <div class="sheet-actions">
-      <button class="chipbtn" type="button" data-act="open-games">Open Games</button>
-      <button class="chipbtn" type="button" data-close="sheet">Done</button>
-    </div>`;
+    <label class="label" for="find-q">A player or a game</label>
+    <input id="find-q" class="findbox" type="search" autocomplete="off" spellcheck="false" placeholder="Try swift, colts or kc">
+    <ul class="findlist" data-find-results aria-live="polite"></ul>
+    <div class="sheet-actions"><button class="chipbtn" type="button" data-close="sheet">Done</button></div>`;
+}
+
+export function findResultsHTML(results, q) {
+  if (!q.trim()) return "";
+  if (!results.length) return `<li class="sheet-note">Nothing found for "${esc(q)}".</li>`;
+  return results.map((r, i) => {
+    const attrs = r.kind === "game" ? `data-game="${esc(r.id)}"` : `data-find="${i}"`;
+    const what = r.kind === "game" ? "Game" : r.kind === "player" ? `${r.owner === "me" ? "Your" : "Their"} ${r.pos === "DEF" ? "D/ST" : r.pos} · ${r.team}` : r.team ?? "";
+    return `<li><button type="button" class="findrow ${r.owner ?? ""}" ${attrs}><b>${esc(r.label ?? r.name)}</b><span>${esc(what)}</span></button></li>`;
+  }).join("");
+}
+
+// A player: every play he was in today, newest first (tap one for its details).
+export function playerSheetHTML(entry, cards, cardHTML) {
+  const total = entry.id ? cards.reduce((s, c) => s + (c.impacts.find((i) => i.id === entry.id)?.delta ?? 0), 0) : null;
+  return `<h2 class="sheet-title" id="sheet-title">${esc(entry.name)}</h2>
+    <p class="label">${esc([entry.owner ? (entry.owner === "me" ? "Your" : "Their") + " " + (entry.pos === "DEF" ? "D/ST" : entry.pos) : null, entry.team].filter(Boolean).join(" · "))}${total != null ? ` · <span class="num">${n1(total)} pts from plays</span>` : ""}</p>
+    <div class="feed sheet-feed">${cards.length ? cards.slice(0, 40).map((c) => cardHTML(c, false)).join("") : `<p class="empty">No plays for him yet.</p>`}</div>
+    <div class="sheet-actions"><button class="chipbtn" type="button" data-close="sheet">Done</button></div>`;
 }
 
 export function settingsSheetHTML() {

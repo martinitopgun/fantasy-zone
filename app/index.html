@@ -267,6 +267,13 @@ button:active { opacity: .75; }
 .layer { grid-row: tabs-start / main-end; grid-column: 1; z-index: 8; min-height: 0; background: var(--turf); display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
 .layer .subtabs { grid-area: auto; }
 .sheet-play { color: var(--mute); font-size: 14px; }
+.findbox { width: 100%; font: 500 17px/1.2 var(--body); padding: 11px 12px; margin-top: 6px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--chalk); }
+.findlist { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.findrow { width: 100%; min-height: 48px; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 12px; text-align: left; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 10px; }
+.findrow.me { border-left-color: var(--you); } .findrow.opponent { border-left-color: var(--opp); }
+.findrow b { font: 700 17px/1.2 var(--display); } .findrow span { font-size: 13px; color: var(--mute); }
+.findrow > * { pointer-events: none; }
+.sheet-feed { margin-top: 10px; }
 .breakdown { border-left: 3px solid var(--line); padding: 6px 0 6px 10px; margin-block: 10px; }
 .breakdown.me { border-left-color: var(--you); } .breakdown.opponent { border-left-color: var(--opp); }
 .breakdown h3 { display: flex; justify-content: space-between; gap: 10px; margin: 0 0 4px; font: 700 17px/1.2 var(--display); }
