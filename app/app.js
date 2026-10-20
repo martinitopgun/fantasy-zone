@@ -523,7 +523,7 @@ const SHEETS = {
 function setSpeed(s) { ui.speed = s; ui.paused = false; store.set("speed", s); tick([]); }
 
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-find],[data-game],[data-sheet],[data-act],[data-speed],[data-jump],[data-mode],[data-pick],[data-close],[data-step],#scorebug");
+  const t = e.target.closest("[data-find],[data-play],[data-game],[data-sheet],[data-act],[data-speed],[data-jump],[data-mode],[data-pick],[data-close],[data-step],#scorebug");
   if (!t) return;
   if (t.id === "scorebug") { // your matchup, one tap from anywhere: whatever is open closes first, in one Back step
     return layers.closeAll(() => { if (ui.tabIds.includes("matchup")) selectTab("matchup", { focus: true }); });
@@ -531,6 +531,7 @@ document.addEventListener("click", (e) => {
   if (t.dataset.close === "layer") return closeGame();
   if (t.dataset.step) return stepGame(Number(t.dataset.step));
   if (t.dataset.find) { ui.findPick = ui.findResults?.[Number(t.dataset.find)]; return ui.findPick && openSheet("player"); }
+  if (t.dataset.play) return openPlay(t.dataset.play); // a dot on the win chart
   if (t.matches("article.play") && !ui.cols) return openPlay(t.dataset.id); // phones: the play's details first
   if (t.dataset.game) return openGame(t.dataset.game); // a game chip, a tile, a play card on a wide screen
   if (t.dataset.sheet) {

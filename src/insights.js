@@ -50,3 +50,27 @@ export function statText(line, pos) {
   if (lost) out.push(lost);
   return out.join(", ");
 }
+
+// How sweaty your matchup is right now: close (near 50%) and lots of points still to come = Full sweat.
+//   closeness c = 1 - |2p - 1|, volume v = min(1, points still expected on both sides / 40)
+//   score = round(100 x c x (0.4 + 0.6 v)): under 35 Chill, under 70 Sweaty, otherwise Full sweat.
+export function sweat(m) {
+  const left = (ps) => ps.reduce((s, p) => s + Math.max(0, p.remaining), 0);
+  const c = 1 - Math.abs(2 * m.winProb - 1);
+  const v = Math.min(1, (left(m.mine) + left(m.theirs)) / 40);
+  const score = Math.round(100 * c * (0.4 + 0.6 * v));
+  return { score, label: score < 35 ? "Chill" : score < 70 ? "Sweaty" : "Full sweat" };
+}
+
+// What you still need: their score plus what their players should still get, minus your score.
+export function needs(m) {
+  const left = (ps) => ps.reduce((s, p) => s + Math.max(0, p.remaining), 0);
+  const playersLeft = m.mine.filter((p) => p.remaining > 0.05).length;
+  return { need: Math.max(0, m.oppNow + left(m.theirs) - m.myNow), mineLeft: left(m.mine), playersLeft };
+}
+
+// The plays that moved your win chance the most, biggest first: [{ cardId, t, from, to, move }].
+export function swings(history, n = 5) {
+  return history.slice(1).map((h, i) => ({ cardId: h.cardId, t: h.t, from: history[i].wp, to: h.wp, move: h.wp - history[i].wp }))
+    .filter((s) => s.cardId).sort((a, b) => Math.abs(b.move) - Math.abs(a.move)).slice(0, n);
+}

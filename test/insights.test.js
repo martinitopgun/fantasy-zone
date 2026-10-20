@@ -3,7 +3,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { statText } from "../src/insights.js";
+import { statText, sweat, needs, swings } from "../src/insights.js";
 
 test("statText: the plan's kicker and defense lines", () => {
   assert.equal(statText({ fgm: 2, fgm_30_39: 1, fgm_40_49: 1, xpm: 3 }, "K"), "2/2 FG, 3 XP");
@@ -24,4 +24,26 @@ test("statText: passers, runners and catchers", () => {
   assert.equal(statText({ rec: 6, rec_tgt: 9, rec_yd: 88, rec_td: 1, rush_att: 1, rush_yd: 1 }, "WR"), "6 rec 88 yds, 1 car 1 yd, 1 TD");
   assert.equal(statText({ rec_tgt: 2 }, "TE"), "0 rec 0 yds"); // targeted, no catch yet
   assert.equal(statText({ rush_att: 3, rush_yd: -2, fum: 1, fum_lost: 1 }, "RB"), "3 car -2 yds, 1 fum lost");
+});
+
+// M3: how sweaty it is, what you still need, and the plays that moved your win chance most.
+const side = (...rem) => rem.map((r) => ({ remaining: r }));
+test("sweat: a coin flip with lots left is a full sweat; a sure thing is chill", () => {
+  assert.equal(sweat({ winProb: 0.5, mine: side(20, 10), theirs: side(15) }).label, "Full sweat");
+  assert.equal(sweat({ winProb: 0.55, mine: side(2), theirs: side(1) }).label, "Sweaty");
+  assert.equal(sweat({ winProb: 0.999, mine: side(30), theirs: side(20) }).label, "Chill");
+});
+
+test("needs: their score plus what they have left, minus yours", () => {
+  const n = needs({ myNow: 80, oppNow: 90, mine: side(12, 0, 8.5), theirs: side(10, -1) });
+  assert.deepEqual(n, { need: 20, mineLeft: 20.5, playersLeft: 2 });
+  assert.equal(needs({ myNow: 120, oppNow: 80, mine: side(5), theirs: side(10) }).need, 0);
+});
+
+test("swings: biggest moves first, only ones a play caused", () => {
+  const h = [{ t: 1, wp: 0.4, cardId: null }, { t: 2, wp: 0.48, cardId: "a" }, { t: 3, wp: 0.3, cardId: "b" }, { t: 4, wp: 0.32, cardId: "c" }];
+  const s = swings(h, 2);
+  assert.deepEqual(s.map((x) => x.cardId), ["b", "a"]);
+  assert.equal(s[0].from, 0.48);
+  assert.ok(Math.abs(s[0].move + 0.18) < 1e-9);
 });

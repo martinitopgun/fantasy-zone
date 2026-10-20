@@ -58,6 +58,7 @@ export function createTracker({ leagues, players, games }) {
   const defStats = new Map(); // team -> defensive stat line
   const yardsGained = new Map(); // team -> offensive yards
   const feed = []; // newest first
+  const history = new Map(); // league id -> [{ t, wp, cardId }]: your win chance after every play that moved it
   const posById = new Map(players.map((p) => [p.id, p.pos]));
   let version = 0; // goes up whenever anything changes, so the screen can skip ticks where nothing happened
   const starters = leagues.flatMap((l) => [...l.mine.map((p) => ({ ...p, owner: "me", league: l })), ...l.theirs.map((p) => ({ ...p, owner: "opponent", league: l }))]);
@@ -201,6 +202,12 @@ export function createTracker({ leagues, players, games }) {
       card.big = !marker && (a.td || a.turnover || (Math.abs(a.yards ?? 0) >= 20 && ["catch", "rush"].includes(a.kind)) || gameSwing >= 0.1
         || impacts.some((x) => Math.abs(x.delta) >= 4) || wp.some((w) => Math.abs(w.after - w.before) >= 0.05));
       feed.push(card);
+      if (!marker) views.forEach((m, i) => {
+        const id = m.league.league_id;
+        if (!history.has(id)) history.set(id, [{ t: play.wallclock, wp: wpBefore[i], cardId: null }]);
+        const list = history.get(id);
+        if (Math.abs(m.winProb - list.at(-1).wp) >= 0.005) list.push({ t: play.wallclock, wp: m.winProb, cardId: card.id });
+      });
       cards.push(card);
     }
     if (cards.length) feed.sort((x, y) => (y.wallclock ?? 0) - (x.wallclock ?? 0));
@@ -219,6 +226,7 @@ export function createTracker({ leagues, players, games }) {
     addPlays, updateGame,
     version: () => version,
     snapshot: () => ({ games: [...gameMap.values()].map((g) => ({ ...g, momentum: undefined })), matchups: matchupViews() }),
+    history: (leagueId) => history.get(leagueId) ?? [],
     momentum: (id) => gameMap.get(id)?.momentum ?? [],
     feed: () => feed,
     // A player's stats so far (a copy), for the lineup rows. A defense (id = its team, "KC") gets its

@@ -15,14 +15,17 @@ export function createReplay(data, { startAt }) {
 
   // Apply every play up to time `until`. Returns the new feed cards.
   function emit(until, silent = false) {
-    const batch = new Map();
+    // Plays go in exactly in time order, even across games (a jump covers hours of several games at once),
+    // so every win chance on the way is the real one at that moment. Back-to-back plays of one game go together.
+    const cards = [];
+    let run = [];
+    const flushRun = () => { if (run.length) cards.push(...tracker.addPlays(run[0].gameId, run, { silent })); run = []; };
     while (idx < plays.length && plays[idx].wallclock <= until) {
       const p = plays[idx++];
-      if (!batch.has(p.gameId)) batch.set(p.gameId, []);
-      batch.get(p.gameId).push(p);
+      if (run.length && run[0].gameId !== p.gameId) flushRun();
+      run.push(p);
     }
-    const cards = [];
-    for (const [gameId, list] of batch) cards.push(...tracker.addPlays(gameId, list, { silent }));
+    flushRun();
     return cards.sort((a, b) => a.wallclock - b.wallclock);
   }
 
