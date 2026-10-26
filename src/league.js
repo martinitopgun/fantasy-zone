@@ -17,8 +17,8 @@ export function liveMatchups(board, pairings, teams) {
   }).sort((x, y) => (y.mine ? 1 : 0) - (x.mine ? 1 : 0));
 }
 
-export function standings(results, teams, live = []) {
-  const rec = new Map(teams.map((t) => [t.roster_id, { roster_id: t.roster_id, owner: t.owner, me: t.me, w: 0, l: 0, t: 0, pf: 0 }]));
+export function standings(results, teams, live = [], records = null) {
+  const rec = new Map(teams.map((t) => [t.roster_id, { roster_id: t.roster_id, owner: t.owner, me: t.me, w: 0, l: 0, t: 0, pf: 0, ...(records?.[t.roster_id] ?? {}) }]));
   for (const { rows } of results) {
     for (const r of rows) rec.get(r.roster_id).pf += r.points;
     for (const pair of Object.values(Object.groupBy(rows, (r) => r.matchup_id))) {

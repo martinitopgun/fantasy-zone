@@ -11,7 +11,7 @@ import { columnsFor, visibleTabs, nearTabs, nextSpeed, SPEEDS, gameClock } from 
 import { createPager } from "./ui/pager.js";
 import { H, createSheet, createLayers } from "./ui/layers.js";
 import { createAppbar } from "./views/appbar.js";
-import { clockSheetHTML, refreshClockSheet, liveSheetHTML, findSheetHTML, findResultsHTML, playerSheetHTML, playSheetHTML, settingsSheetHTML, setupHTML, pictureSheetHTML } from "./views/sheets.js";
+import { clockSheetHTML, refreshClockSheet, liveSheetHTML, findSheetHTML, findResultsHTML, playerSheetHTML, playSheetHTML, settingsSheetHTML, setupHTML, pictureSheetHTML, onboardHTML } from "./views/sheets.js";
 import { createZoneView } from "./views/zone.js";
 import { createMatchupView } from "./views/matchup.js";
 import { createGamesView } from "./views/games.js";
@@ -25,6 +25,8 @@ import { createBanner } from "./ui/banner.js";
 import { createStory } from "./views/story.js";
 import { storyCards } from "./src/story.js";
 import { createPicks } from "./src/picks.js";
+import { findAccount, syncLeagues, replayLeagues } from "./src/connect.js";
+import { makeFetchJson } from "./src/net.js";
 
 const POLL_MS = 10_000;
 const TICK_MS = 250;
@@ -42,6 +44,7 @@ const ui = {
   // where you are
   tab: null, tabIds: [], pages: {}, scroll: {}, cols: null, pick: store.get("pick", null), fantasyOn: store.get("fantasy", true) !== false,
   settings: { banners: store.get("banners", true) !== false },
+  account: store.get("account", null), // your synced Sleeper: { user, leagues, chosen, active, synced }
   badges: { zone: 0, matchup: false }, seenWp: null, // tab badges (plan M4)
   // replay controls and the Zone filter
   filter: store.get("filter", "mine"),
@@ -536,16 +539,26 @@ function stop() { clearInterval(ui.timer); ui.timer = null; }
 function showBoot(html) { boot.innerHTML = html; boot.hidden = false; shell.classList.add("booting"); }
 function hideBoot() { boot.hidden = true; boot.innerHTML = ""; shell.classList.remove("booting"); }
 
-async function startReplay() {
-  if (ui.stack.length) return layers.closeAll(() => startReplay());
+// The replay's data: last Sunday's real plays, with your synced leagues (or the demo league).
+async function loadBase() {
+  if (ui.replayBase) return ui.replayBase;
+  ui.replayBase = window.__FZ_REPLAY__ ?? await (await fetch("replay.json")).json(); // the one-file version carries it inline
+  return ui.replayBase;
+}
+function replayDataFor(base) {
+  const a = ui.account;
+  if (!a?.synced?.length) return base;
+  const leagues = replayLeagues(base, a.synced, a.active);
+  return leagues.length ? { ...base, user: a.user.display_name, leagues } : base;
+}
+
+async function startReplay({ at = REPLAY_START } = {}) {
+  if (ui.stack.length) return layers.closeAll(() => startReplay({ at }));
   stop();
   ui.mode = "replay"; ui.live = null; ui.error = null;
-  if (!ui.replayData) {
-    showBoot(`<p class="empty">Loading the replay…</p>`);
-    try { ui.replayData = await (await fetch("replay.json")).json(); }
-    catch (e) { showBoot(`<p class="empty">Couldn't load the replay: ${e.message}</p>`); return; }
-  }
-  ui.replay = createReplay(ui.replayData, { startAt: REPLAY_START });
+  try { ui.replayData = replayDataFor(await loadBase()); }
+  catch (e) { showBoot(`<p class="empty">Couldn't load the replay: ${e.message}</p>`); return; }
+  ui.replay = createReplay(ui.replayData, { startAt: at });
   ui.tracker = ui.replay.tracker;
   newPicks("replay");
   hideBoot();
@@ -590,6 +603,49 @@ async function startLive() {
       tick(cards);
     } catch (e) { ui.error = e.message; appbar.renderTransport(); }
   }, POLL_MS);
+}
+
+// ---------- Sleeper sign-in (first open, "Sync another account", "Sync more leagues") ----------
+// Straight to Sleeper from the browser; through the local server when the app runs with npm start.
+const sleeperFetch = () => makeFetchJson({ rewrite: ui.hasServer ? (u) => u.replace("https://api.sleeper.app", "/proxy/sleeper") : (u) => u });
+const netHelp = (e) => (/fetch|network|load failed/i.test(e.message) ? "Couldn't reach Sleeper from here. Open the app's own link (the one-file version) in a normal browser, then try again." : e.message);
+
+function showOnboard(state = {}) {
+  if (ui.stack.length) return layers.closeAll(() => showOnboard(state));
+  stop();
+  appbar.clear(); rail.clear();
+  showBoot(onboardHTML(state));
+  boot.querySelector("#ob-username")?.focus();
+  boot.querySelector("#onboard-name")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const username = boot.querySelector("#ob-username").value.trim();
+    if (!username) return;
+    showOnboard({ username, busy: "Finding your leagues…" });
+    try {
+      const account = await findAccount(sleeperFetch(), username);
+      showOnboard({ step: "leagues", account });
+    } catch (err) { showOnboard({ username, error: netHelp(err) }); }
+  });
+  boot.querySelector("#onboard-leagues")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const chosen = [...boot.querySelectorAll('input[name="lg"]:checked')].map((x) => x.value);
+    if (!chosen.length) return showOnboard({ ...state, error: "Pick at least one league." });
+    await syncAccount(state.account, chosen, (busy) => showOnboard({ ...state, chosen, busy }), (error) => showOnboard({ ...state, chosen, error }));
+  });
+}
+
+async function syncAccount(account, chosen, onBusy, onError) {
+  try {
+    const synced = await syncLeagues(sleeperFetch(), account, chosen, { onStep: onBusy });
+    const base = await loadBase();
+    const playable = replayLeagues(base, synced, null);
+    if (!playable.length) return onError("None of those leagues had a head-to-head matchup in Week 6, so there's nothing to replay yet. Try another league.");
+    ui.account = { ...account, chosen, synced, active: (playable.find((l) => l.league.league_id === account.active) ?? playable[0]).league.league_id };
+    store.set("account", ui.account); store.set("demo", false);
+    ui.username = account.user.username; store.set("username", ui.username);
+    hideBoot();
+    startReplay();
+  } catch (err) { onError(netHelp(err)); }
 }
 
 // Live mode needs a Sleeper username first.
@@ -682,6 +738,11 @@ document.addEventListener("click", (e) => {
     case "story": return openStory();
     case "goto-matchup": return selectTab("matchup", { focus: true });
     case "toggle-fantasy": setFantasy(!ui.fantasyOn); return refreshSettings();
+    case "demo": store.set("demo", true); ui.account = null; store.set("account", null); return layers.closeAll(() => { hideBoot(); startReplay(); });
+    case "new-account": return layers.closeAll(() => showOnboard({}));
+    case "more-leagues": return layers.closeAll(() => showOnboard({ step: "leagues", account: ui.account, chosen: ui.account?.chosen }));
+    case "resync": return layers.closeAll(() => { showOnboard({ step: "leagues", account: ui.account, chosen: ui.account.chosen, busy: "Syncing…" }); syncAccount(ui.account, ui.account.chosen, (busy) => showOnboard({ step: "leagues", account: ui.account, chosen: ui.account.chosen, busy }), (error) => showOnboard({ step: "leagues", account: ui.account, chosen: ui.account.chosen, error })); });
+    case "league": { ui.account.active = t.dataset.league; store.set("account", ui.account); const at = ui.replay?.time ?? REPLAY_START; return layers.closeAll(() => startReplay({ at })); }
     case "toggle-banners": ui.settings.banners = !ui.settings.banners; store.set("banners", ui.settings.banners); if (!ui.settings.banners) banner.hide(); return refreshSettings();
   }
 });
@@ -740,8 +801,7 @@ route(startHash, { smooth: false });
 try { history.replaceState({ fz: 1, depth: 0 }, "", `#${ui.tab}`); } catch { /* history unavailable */ }
 
 ui.hasServer = await fetch("/proxy/ping").then((r) => r.ok).catch(() => false);
-if (ui.hasServer) {
-  if (ui.username) startLive(); else showSetup();
-} else {
-  startReplay();
-}
+await Promise.all([loadBase().catch(() => null), new Promise((r) => setTimeout(r, matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 1400))]); // the intro
+if (!ui.account && !store.get("demo", false)) showOnboard({});
+else if (ui.hasServer && ui.username && !ui.account) startLive();
+else startReplay();

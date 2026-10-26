@@ -128,7 +128,20 @@ export function pictureSheetHTML(url) {
 const SWITCH = (act, on, title, sub) => `<button class="setrow" type="button" role="switch" aria-checked="${on}" data-act="${act}">
     <span><b>${title}</b><small>${sub}</small></span><i class="switch" aria-hidden="true"></i></button>`;
 export function settingsSheetHTML({ ui }) {
+  const acct = ui.account;
+  const leagues = acct ? acct.leagues.filter((l) => acct.chosen.includes(l.league_id)) : [];
   return `<h2 class="sheet-title" id="sheet-title">Settings</h2>
+    <section class="acct">
+      <p class="label">Your Sleeper</p>
+      ${acct ? `<p class="acct-who"><b>${esc(acct.user.display_name)}</b> · ${leagues.length} league${leagues.length === 1 ? "" : "s"} synced</p>
+        ${leagues.length > 1 ? `<div class="acct-leagues" role="radiogroup" aria-label="Main league">${leagues.map((l) => `<button class="setrow" type="button" role="radio" aria-checked="${l.league_id === acct.active}" data-act="league" data-league="${esc(l.league_id)}"><span><b>${esc(l.name)}</b><small>${l.league_id === acct.active ? "Showing now" : "Tap to show this league"}</small></span></button>`).join("")}</div>` : ""}`
+      : `<p class="acct-who">Watching the demo league (ontopgun).</p>`}
+      <div class="acct-btns">
+        ${acct ? `<button class="chipbtn" type="button" data-act="resync">Sync again</button><button class="chipbtn" type="button" data-act="more-leagues">Sync more leagues</button>` : ""}
+        <button class="chipbtn" type="button" data-act="new-account">${acct ? "Sync another account" : "Sync my Sleeper"}</button>
+        ${acct ? `<button class="chipbtn" type="button" data-act="demo">Use the demo league</button>` : ""}
+      </div>
+    </section>
     <div class="setlist">
       ${SWITCH("toggle-fantasy", ui.fantasyOn, "Fantasy", "Your matchup, the score at the top, and ranking games by your players. Off: just football, ranked by how exciting each game is.")}
       ${SWITCH("toggle-banners", ui.settings.banners, "Banners for big moments", "A short banner when something big happens in your matchup. It never switches what you're watching.")}
@@ -146,5 +159,31 @@ export function setupHTML({ error, username }) {
     <button class="go" type="submit">Connect</button>
     <button class="chipbtn" type="button" data-mode="replay">Or watch last Sunday's replay</button>
     ${error ? `<p class="err">${esc(error)}</p>` : ""}
+  </form>`;
+}
+
+// First open (and "Sync another account"): ask for a Sleeper username, then which leagues to sync.
+export function onboardHTML({ step = "name", username = "", error = "", busy = "", account = null, chosen = null }) {
+  if (step === "leagues" && account) {
+    const pick = chosen ?? account.leagues.map((l) => l.league_id);
+    return `<form class="setup onboard" id="onboard-leagues">
+      <p class="label">Hi ${esc(account.user.display_name)} 👋</p>
+      <h1>Pick your leagues</h1>
+      ${account.leagues.length ? `<div class="ob-leagues">${account.leagues.map((l) => `<label class="ob-league"><input type="checkbox" name="lg" value="${esc(l.league_id)}"${pick.includes(l.league_id) ? " checked" : ""}><span><b>${esc(l.name)}</b><small>${l.total_rosters ?? "?"} teams</small></span></label>`).join("")}</div>`
+        : `<p>No 2026 leagues found for this account.</p>`}
+      <button class="go" type="submit"${busy || !account.leagues.length ? " disabled" : ""}>${busy ? esc(busy) : "Sync and start"}</button>
+      ${error ? `<p class="err">${esc(error)}</p>` : ""}
+      <button class="chipbtn" type="button" data-act="new-account">Different account</button>
+    </form>`;
+  }
+  return `<form class="setup onboard" id="onboard-name">
+    <p class="label">Welcome to Fantasy Zone</p>
+    <h1>Sync your Sleeper league</h1>
+    <p>Type your Sleeper username. We find your leagues, team, opponent and scoring automatically. No password.</p>
+    <label class="label" for="ob-username">Sleeper username</label>
+    <input id="ob-username" autocomplete="username" autocapitalize="none" spellcheck="false" required placeholder="your username" value="${esc(username)}">
+    <button class="go" type="submit"${busy ? " disabled" : ""}>${busy ? esc(busy) : "Find my leagues"}</button>
+    ${error ? `<p class="err">${esc(error)}</p>` : ""}
+    <button class="chipbtn" type="button" data-act="demo">Just look around (demo league)</button>
   </form>`;
 }

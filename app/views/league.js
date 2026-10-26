@@ -42,11 +42,11 @@ export function createLeagueView({ ui }) {
 
   function standingsHTML(L, lm) {
     const oppId = lm.find((m) => m.mine)?.b.roster_id;
-    const rows = standings(L.results, L.teams, lm);
+    const rows = standings(L.results ?? [], L.teams, lm, L.records);
     return `<table class="ltable"><thead><tr><th>#</th><th class="tl">Team</th><th>W-L</th><th>PF</th><th>Now</th></tr></thead><tbody>
       ${rows.map((s, i) => `<tr class="${tone(s, oppId)}"><td class="num">${i + 1}</td><td class="tl">${esc(s.owner)}</td><td class="num">${s.w}-${s.l}${s.t ? `-${s.t}` : ""}</td><td class="num">${n1(s.pf)}</td><td><span class="lnow ${s.now ?? ""}">${s.now ?? ""}</span></td></tr>`).join("")}
       </tbody></table>
-      <p class="sheet-note">Record through week 5. "Now" is this week's matchup as it stands.</p>`;
+      <p class="sheet-note">Record before this week. "Now" is this week's matchup as it stands.</p>`;
   }
 
   function movesHTML(L) {

@@ -82,7 +82,23 @@ for (const w of [5, 6]) {
 }
 moves.sort((a, b) => b.t - a.t);
 
+// Every player's Week 6 projection (only the stats a league can score) and profile, so the app can rebuild
+// this replay for anyone's Sleeper league.
+const keys = new Set(Object.keys(scoring));
+const projStats = {}, profiles = {};
+for (const r of projRows) {
+  if (!r.player || !r.stats) continue;
+  const pos = r.player.position;
+  if ((r.stats.pts_ppr ?? 0) < 0.5 && pos !== "DEF") continue;
+  const st = {};
+  for (const [k, v] of Object.entries(r.stats)) if (keys.has(k) && v) st[k] = Math.round(v * 100) / 100;
+  projStats[r.player_id] = st;
+  const p = profile(r.player_id, pos ?? "DEF", r.team ?? r.player_id);
+  profiles[r.player_id] = [pos ?? "DEF", r.team ?? r.player_id, Math.round(p.spread * 10) / 10, Math.round(p.boomRate * 100) / 100, Math.round(p.rzShare * 100) / 100, p.booms, p.games];
+}
+
 await writeFile(path.join(root, "app/replay.json"), JSON.stringify({
+  projStats, profiles,
   note: "Every real play of NFL Week 6 (ESPN) with ontopgun's real Sleeper league.",
   user: "ontopgun",
   leagues: [{
