@@ -800,7 +800,7 @@ buildTabs();
 route(startHash, { smooth: false });
 try { history.replaceState({ fz: 1, depth: 0 }, "", `#${ui.tab}`); } catch { /* history unavailable */ }
 
-ui.hasServer = await fetch("/proxy/ping").then((r) => r.ok).catch(() => false);
+ui.hasServer = location.protocol.startsWith("http") && !window.__FZ_REPLAY__ && await fetch("/proxy/ping").then((r) => r.ok).catch(() => false);
 await Promise.all([loadBase().catch(() => null), new Promise((r) => setTimeout(r, matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 1400))]); // the intro
 if (!ui.account && !store.get("demo", false)) showOnboard({});
 else if (ui.hasServer && ui.username && !ui.account) startLive();
