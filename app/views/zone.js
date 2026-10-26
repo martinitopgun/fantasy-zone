@@ -9,6 +9,7 @@
 import { esc } from "./cards.js";
 import { createFeedList } from "../ui/feed.js";
 import { feedFilters, feedFilter, onFieldVM } from "../src/view-models.js";
+import { isStarredCard } from "../src/starred.js";
 import { REPLAY_NOTE } from "./sheets.js";
 import { windows } from "../src/replay.js";
 
@@ -17,6 +18,7 @@ const EMPTY = {
   all: "No plays yet. Kickoff is coming.",
   big: "No big plays yet. Touchdowns, turnovers, long gains and big swings in your win chance show up here.",
   close: "No plays from close games yet.",
+  starred: "No plays from your starred players yet. Open any play or search a player and tap ☆ Star.",
 };
 
 export function createZoneView({ ui, store }) {
@@ -38,7 +40,7 @@ export function createZoneView({ ui, store }) {
     when.innerHTML = opts.map(([v, l]) => `<option value="${v}"${v === ui.when ? " selected" : ""}>${esc(l)}</option>`).join("");
   }
   function currentFilter() {
-    const base = feedFilter(ui.filter);
+    const base = ui.filter === "starred" ? (c) => c.kind !== "marker" && isStarredCard(c, new Set(ui.starred)) : feedFilter(ui.filter);
     const w = wins.find((x) => String(x.kickoff) === ui.when);
     if (!w) return base;
     const ids = new Set(w.games);

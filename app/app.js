@@ -11,7 +11,7 @@ import { columnsFor, visibleTabs, nearTabs, nextSpeed, SPEEDS, gameClock } from 
 import { createPager } from "./ui/pager.js";
 import { H, createSheet, createLayers } from "./ui/layers.js";
 import { createAppbar } from "./views/appbar.js";
-import { clockSheetHTML, refreshClockSheet, liveSheetHTML, findSheetHTML, findResultsHTML, playerSheetHTML, playSheetHTML, settingsSheetHTML, setupHTML, pictureSheetHTML, onboardHTML } from "./views/sheets.js";
+import { clockSheetHTML, refreshClockSheet, liveSheetHTML, findSheetHTML, findResultsHTML, playerSheetHTML, playSheetHTML, settingsSheetHTML, setupHTML, pictureSheetHTML, onboardHTML, starredSheetHTML, trophiesSheetHTML } from "./views/sheets.js";
 import { createZoneView } from "./views/zone.js";
 import { createMatchupView } from "./views/matchup.js";
 import { createGamesView } from "./views/games.js";
@@ -23,10 +23,14 @@ import { cardHTML } from "./views/cards.js";
 import { createAlerts, WP_ALERT } from "./src/alerts.js";
 import { createBanner } from "./ui/banner.js";
 import { createStory } from "./views/story.js";
+import { createMulti } from "./views/multi.js";
 import { storyCards } from "./src/story.js";
 import { createPicks } from "./src/picks.js";
 import { findAccount, syncLeagues, replayLeagues } from "./src/connect.js";
 import { makeFetchJson } from "./src/net.js";
+import { toggleStar, starAlerts, isStarredCard } from "./src/starred.js";
+import { TROPHIES, checkTrophies } from "./src/trophies.js";
+import { sweat } from "./src/insights.js";
 
 const POLL_MS = 10_000;
 const TICK_MS = 250;
@@ -44,6 +48,9 @@ const ui = {
   // where you are
   tab: null, tabIds: [], pages: {}, scroll: {}, cols: null, pick: store.get("pick", null), fantasyOn: store.get("fantasy", true) !== false,
   settings: { banners: store.get("banners", true) !== false },
+  starred: store.get("starred", []), // starred players' names
+  trophies: { unlocked: {}, counts: { games: 0, story: 0, share: 0, whatif: 0, plays: 0 }, sweatSeen: false, ...store.get("trophies", {}) },
+  gamesSeen: new Set(),
   account: store.get("account", null), // your synced Sleeper: { user, leagues, chosen, active, synced }
   badges: { zone: 0, matchup: false }, seenWp: null, // tab badges (plan M4)
   // replay controls and the Zone filter
@@ -288,6 +295,7 @@ function openGame(id) {
   if (!ui.tracker) return false;
   const ctx = lazyCtx();
   if (!ctx.snap.games.some((g) => g.id === id)) return false;
+  if (!ui.gamesSeen.has(id)) { ui.gamesSeen.add(id); count("games"); } // Trophies: Scout
   if (layers.top()?.kind === "sheet") { layers.back(() => openGame(id)); return true; } // a sheet goes first
   if (gameLayer.id) {
     if (id === gameLayer.id) return true;
@@ -322,7 +330,7 @@ function openGame(id) {
 }
 
 // Sunday Story (plan M5): full screen over everything, with its own Back step.
-const story = createStory({ el: $("#story"), onClose: () => layers.back(), onPicture: (url) => { ui.picture = url; openSheet("picture"); } });
+const story = createStory({ el: $("#story"), onClose: () => layers.back(), onPicture: (url) => { ui.picture = url; openSheet("picture"); }, onShare: () => count("share") });
 const storyNow = (ctx) => {
   const m = ctx.snap.matchups[0];
   return m ? storyCards({ m, history: ui.tracker.history(m.league.league_id), feed: ui.tracker.feed() }) : null;
@@ -331,6 +339,7 @@ function openStory() {
   if (!ui.tracker || layers.has("story")) return;
   const s = storyNow(lazyCtx());
   if (!s) return;
+  count("story");
   const opener = document.activeElement;
   let saved = [];
   layers.open({
@@ -349,6 +358,19 @@ function openStory() {
   }, "#story");
 }
 
+// Multi-view: a layer with up to 4 games (own Back step, like a game).
+const multi = createMulti({ el: $("#multi"), ui, store, onOpenGame: (id) => layers.back(() => openGame(id)) });
+function openMulti() {
+  if (!ui.tracker || layers.has("multi")) return;
+  const ctx = lazyCtx();
+  let saved = [];
+  layers.open({
+    kind: "multi",
+    show() { saved = [tabbar, main].map((x) => [x, x.inert]); for (const [x] of saved) x.inert = true; multi.open(ctx); },
+    hide() { multi.close(); for (const [x, was] of saved) x.inert = was; },
+  }, "#multi");
+}
+
 // ‹ › in the game's head, and the [ ] keys.
 function stepGame(dir) {
   const to = layerEl.querySelector(`[data-step="${dir}"]`)?.dataset.to;
@@ -356,7 +378,7 @@ function stepGame(dir) {
 }
 
 // Close the game (‹, ×, Esc): through Back when it has a Back step, so the browser's Back stays in step.
-function closeGame() { if (gameLayer.id && layers.top()?.kind === "game") layers.back(); }
+function closeGame() { const k = layers.top()?.kind; if ((gameLayer.id && k === "game") || k === "multi") layers.back(); }
 
 function openSheet(kind) {
   if (kind === "clock" && !ui.replay) return;
@@ -424,7 +446,10 @@ function flush() {
   renderPin(ctx);
   headsUp(ctx, ui.pending);
   stepPicks(ctx, ui.pending);
+  const seen = ui.pending.filter((c) => !c.silent && c.kind !== "marker").length;
+  if (seen) count("plays", seen); else checkTrophiesNow(ctx);
   if (story.isOpen && ui.pending.length) story.update(storyNow(ctx));
+  if (multi.isOpen) multi.update(ctx);
   ui.pending = [];
 }
 
@@ -436,6 +461,27 @@ function stepPicks(ctx, cards) {
 function newPicks(mode) {
   const key = `picks:${mode}`;
   ui.picks = createPicks({ saved: store.get(key, null), onSave: (s) => store.set(key, s) });
+}
+
+// ---------- Trophies ----------
+ui.onWhatIf = () => count("whatif");
+// count("games") etc. from actions; checkTrophiesNow() after each update shows a toast for new ones.
+function count(kind, n = 1) { ui.trophies.counts[kind] = (ui.trophies.counts[kind] ?? 0) + n; store.set("trophies", ui.trophies); checkTrophiesNow(); }
+let toastTimer = 0;
+function checkTrophiesNow(ctx = ui.tracker ? lazyCtx() : null) {
+  const m = ctx?.snap.matchups[0];
+  if (m && sweat(m).label === "Full sweat") ui.trophies.sweatSeen = true;
+  const state = { picks: ui.picks?.score() ?? { right: 0, best: 0, points: 0 }, history: m ? ui.tracker.history(m.league.league_id) : [], counts: ui.trophies.counts, sweatSeen: ui.trophies.sweatSeen };
+  const fresh = checkTrophies(state, ui.trophies.unlocked);
+  if (!fresh.length) return;
+  for (const id of fresh) ui.trophies.unlocked[id] = Date.now();
+  store.set("trophies", ui.trophies);
+  const t = TROPHIES.find((x) => x.id === fresh[0]);
+  const el = $("#toast");
+  el.innerHTML = `<button type="button" class="toast" data-sheet="trophies"><span class="confetti" aria-hidden="true">${"<i></i>".repeat(12)}</span>${t.icon} Trophy unlocked: <b>${t.name}</b>${fresh.length > 1 ? ` +${fresh.length - 1}` : ""}</button>`;
+  el.hidden = false;
+  $("#announce").textContent = `Trophy unlocked: ${t.name}`;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; el.innerHTML = ""; }, 4500);
 }
 
 // ---------- Heads-up (plan M4): banners and tab badges ----------
@@ -458,6 +504,8 @@ function headsUp(ctx, fresh) {
     if (list.some((a) => a.lead)) ui.badges.matchup = true;
     if (ui.settings.banners && list.length) banner.show(list);
   }
+  const stars = starAlerts(live, new Set(ui.starred), { skip: [gameLayer.id].filter(Boolean), already: new Set(list.map((a) => a.cardId)) });
+  if (ui.settings.banners && stars.length && !list.length) banner.show(stars);
   renderBadges(ctx);
 }
 
@@ -676,8 +724,10 @@ const SHEETS = {
   clock: () => clockSheetHTML({ ui, wins: windows(ui.replayData, { from: REPLAY_START - 6 * 3600_000 }) }),
   live: () => liveSheetHTML({ ui }),
   find: () => findSheetHTML(),
-  play: () => playSheetHTML(ui.tracker?.feed().find((c) => c.id === ui.playId)),
-  player: () => (ui.findPick ? playerSheetHTML(ui.findPick, playerCards(ui.findPick), cardHTML) : ""),
+  play: () => playSheetHTML(ui.tracker?.feed().find((c) => c.id === ui.playId), new Set(ui.starred)),
+  player: () => (ui.findPick ? playerSheetHTML(ui.findPick, playerCards(ui.findPick), cardHTML, new Set(ui.starred)) : ""),
+  trophies: () => trophiesSheetHTML(TROPHIES, ui.trophies.unlocked),
+  starred: () => starredSheetHTML(ui.starred, (n) => (ui.tracker?.feed() ?? []).filter((c) => c.kind !== "marker" && isStarredCard(c, new Set([n]))), cardHTML),
   settings: () => settingsSheetHTML({ ui }),
   picture: () => pictureSheetHTML(ui.picture),
 };
@@ -736,6 +786,14 @@ document.addEventListener("click", (e) => {
     case "change-user": return layers.closeAll(() => { ui.error = null; showSetup(); });
     case "fantasy-on": setFantasy(true); return selectTab("matchup");
     case "story": return openStory();
+    case "multi": return layers.closeAll(() => openMulti());
+    case "star": {
+      ui.starred = toggleStar(ui.starred, t.dataset.name); store.set("starred", ui.starred);
+      const on = ui.starred.includes(t.dataset.name);
+      for (const b of document.querySelectorAll(`[data-act="star"]`)) if (b.dataset.name === t.dataset.name) { b.setAttribute("aria-pressed", String(on)); b.textContent = on ? "★ Starred" : "☆ Star"; }
+      if (ui.filter === "starred") views.zone.fantasyChanged?.(ui.tracker ? lazyCtx() : null);
+      return;
+    }
     case "goto-matchup": return selectTab("matchup", { focus: true });
     case "toggle-fantasy": setFantasy(!ui.fantasyOn); return refreshSettings();
     case "demo": store.set("demo", true); ui.account = null; store.set("account", null); return layers.closeAll(() => { hideBoot(); startReplay(); });

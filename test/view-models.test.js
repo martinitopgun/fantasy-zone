@@ -125,8 +125,8 @@ for (const p of [...data.plays].sort((a, b) => a.wallclock - b.wallclock)) {
   for (const c of day.addPlays(p.gameId, [p])) if (!taylor140 && c.gameName === "TEN @ IND" && /Taylor/.test(c.name) && /^38-yd catch/.test(c.label)) taylor140 = c;
 }
 
-test("feed filters: My matchup / All / Big on the full day", () => {
-  assert.deepEqual(FEED_FILTERS.map(([k]) => k), ["mine", "all", "big"]);
+test("feed filters: My matchup / All / Big / Starred on the full day", () => {
+  assert.deepEqual(FEED_FILTERS.map(([k]) => k), ["mine", "all", "big", "starred"]);
   const feed = day.feed();
   assert.equal(feed.filter(feedFilter("all")).length, 2398);
   assert.equal(feed.filter(feedFilter("mine")).length, 173);

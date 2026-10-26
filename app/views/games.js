@@ -100,6 +100,7 @@ export function createGamesView({ ui, store, getCtx }) {
         <div class="page-head">
           <div class="colhead"><h2 class="coltitle" id="col-games" tabindex="-1">Games</h2><span class="colpick-slot"></span></div>
           <div class="filters" role="group" aria-label="Which games">
+            <button class="chipbtn mvbtn" type="button" data-act="multi">📺 Multi-view</button>
             ${GAME_SEGMENTS.map(([k, l]) => `<button class="chipbtn" type="button" data-seg="${k}" aria-pressed="${seg === k}">${esc(l)} <span class="n num"></span></button>`).join("")}
           </div>
           <div class="sortrow">

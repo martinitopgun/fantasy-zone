@@ -328,6 +328,54 @@ table.box .tl { text-align: left; } table.box td.me { color: var(--you); font-we
 .acct-leagues { display: grid; gap: 6px; }
 .acct-leagues .setrow[aria-checked="true"] { border-color: var(--you); }
 .acct-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Starred players */
+.starbtn { margin: 6px 0; } .starbtn[aria-pressed="true"] { background: var(--chalk); color: var(--turf); border-color: var(--chalk); }
+.banner.star { border-left-color: var(--chalk); }
+.starrow { padding: 8px 0; border-bottom: 1px solid var(--line); } .starrow p { margin: 0 0 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* Trophies */
+.toastbox { grid-row: main-start / main-end; grid-column: 1; align-self: start; justify-self: center; margin-top: 8px; position: relative; z-index: 11; }
+.toast { position: relative; overflow: visible; padding: 12px 16px; border-radius: 999px; border: 1px solid var(--you); background: var(--panel); color: var(--chalk); font: 600 15px/1.2 var(--display); box-shadow: 0 8px 24px rgb(0 0 0 / .3); animation: bannerIn .25s ease-out; }
+.confetti { position: absolute; inset: 0; pointer-events: none; }
+.confetti i { position: absolute; left: 50%; top: 50%; width: 6px; height: 10px; border-radius: 2px; background: var(--you); animation: confetti 1s ease-out forwards; }
+.confetti i:nth-child(odd) { background: var(--opp); } .confetti i:nth-child(3n) { background: var(--up); }
+.confetti i:nth-child(1) { --x: -90px; --y: -40px; }
+.confetti i:nth-child(2) { --x: 80px; --y: -50px; }
+.confetti i:nth-child(3) { --x: -60px; --y: 40px; }
+.confetti i:nth-child(4) { --x: 100px; --y: 30px; }
+.confetti i:nth-child(5) { --x: -120px; --y: 0px; }
+.confetti i:nth-child(6) { --x: 130px; --y: -10px; }
+.confetti i:nth-child(7) { --x: -30px; --y: -60px; }
+.confetti i:nth-child(8) { --x: 40px; --y: 60px; }
+.confetti i:nth-child(9) { --x: -100px; --y: 50px; }
+.confetti i:nth-child(10) { --x: 60px; --y: -70px; }
+.confetti i:nth-child(11) { --x: 0px; --y: 70px; }
+.confetti i:nth-child(12) { --x: 120px; --y: 50px; }
+@keyframes confetti { from { transform: translate(0, 0) rotate(0); opacity: 1; } to { transform: translate(var(--x), var(--y)) rotate(540deg); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .confetti { display: none; } }
+.trophies { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 8px 0 14px; }
+.trophy { display: grid; gap: 4px; padding: 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel-2); opacity: .55; }
+.trophy.got { opacity: 1; border-color: var(--you); }
+.trophy .t-icon { font-size: 28px; } .trophy b { font: 700 16px/1.1 var(--display); } .trophy small { font-size: 12px; color: var(--mute); }
+/* Multi-view */
+.layer.multi { z-index: 9; grid-row: tabs-start / main-end; display: block; overflow-y: auto; }
+.mv-body { padding: 8px var(--gut-r) 24px var(--gut-l); display: grid; gap: 10px; max-width: 1100px; margin: 0 auto; }
+.mv-big { padding: 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); display: grid; gap: 6px; }
+.mv-big.red, .mv-small.red { border-color: var(--hot); }
+.mv-head { display: flex; align-items: center; gap: 8px; }
+.mv-title { flex: 1; text-align: left; background: none; border: 0; color: var(--chalk); padding: 0; font: 700 22px/1.1 var(--display); }
+.mv-title span { font-size: 15px; color: var(--mute); margin-left: 6px; }
+.mv-sit { margin: 0; color: var(--mute); font-size: 13px; }
+.mv-who { margin: 0; font-size: 13px; } .mv-who .me { color: var(--you); font-weight: 600; } .mv-who .opponent { color: var(--opp); font-weight: 600; }
+.mv-plays { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; } .mv-plays li { padding: 6px 0; border-top: 1px solid var(--line); }
+.mv-row { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
+.mv-small { position: relative; flex: 0 0 min(46%, 220px); scroll-snap-align: start; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.mv-pick { display: grid; gap: 3px; width: 100%; padding: 10px 28px 10px 10px; background: none; border: 0; color: var(--chalk); text-align: left; }
+.mv-pick b { font: 700 16px/1.1 var(--display); } .mv-pick span { font-size: 12px; color: var(--mute); } .mv-pick small { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mv-x { position: absolute; top: 2px; right: 2px; width: 32px; height: 32px; background: none; border: 0; color: var(--mute); font-size: 18px; }
+.mv-head .mv-x { position: static; }
+.mv-add { flex: 0 0 min(46%, 220px); min-height: 80px; border: 1px dashed var(--line); border-radius: 12px; background: none; color: var(--mute); font: 700 15px/1 var(--display); text-transform: uppercase; }
+.mv-list { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (min-width: 900px) { .mv-body { grid-template-columns: 2fr 1fr; align-items: start; } .mv-row { flex-direction: column; overflow: visible; } .mv-small, .mv-add { flex: none; } .mv-list { grid-column: 1 / -1; } }
 /* Settings switches */
 .setlist { display: grid; gap: 8px; margin: 8px 0 14px; }
 .setrow { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; text-align: left; color: var(--chalk); }
@@ -568,8 +616,10 @@ table.box .tl { text-align: left; } table.box td.me { color: var(--you); font-we
     </div></div>
   </main>
   <section class="layer" id="layer" role="region" aria-labelledby="layer-title" hidden></section>
+  <section class="layer multi" id="multi" role="region" aria-labelledby="layer-title" hidden></section>
   <section class="story" id="story" role="dialog" aria-modal="true" aria-labelledby="story-title" hidden></section>
   <div class="alert" id="alert" hidden></div>
+  <div class="toastbox" id="toast" hidden></div>
   <div class="backdrop" id="backdrop" hidden></div>
   <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden></section>
   <div class="sr-only" aria-live="polite" id="announce"></div>

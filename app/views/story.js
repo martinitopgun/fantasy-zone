@@ -10,7 +10,7 @@
 import { esc } from "./cards.js";
 import { framed } from "../ui/layers.js";
 
-export function createStory({ el, onClose, onPicture }) {
+export function createStory({ el, onClose, onPicture, onShare = () => {} }) {
   let s = null, k = 0;
   let y0 = null, dy = 0, moved = false; // swipe-down state
 
@@ -66,6 +66,7 @@ export function createStory({ el, onClose, onPicture }) {
   el.addEventListener("pointercancel", end);
 
   async function share() {
+    onShare();
     const url = drawCard(s, k);
     const name = `fantasy-zone-${s.cards[k].kind}.png`;
     let ok = false;

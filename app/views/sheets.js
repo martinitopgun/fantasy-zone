@@ -72,12 +72,16 @@ const rowText = ([k, change, pts]) => {
 };
 
 // One play: what happened, every fantasy point it moved (and why), and what it did to your win chance.
-export function playSheetHTML(c) {
+// ★ Star / ★ Starred toggle for a player (Starred players).
+export const starBtnHTML = (name, on) => (name ? `<button class="chipbtn starbtn" type="button" data-act="star" data-name="${esc(name)}" aria-pressed="${on}">${on ? "★ Starred" : "☆ Star"}</button>` : "");
+
+export function playSheetHTML(c, starred = new Set()) {
   if (!c) return `<h2 class="sheet-title" id="sheet-title">Play</h2><p>That play isn't here any more.</p>`;
   const wins = c.wp.filter((w) => Math.abs(w.after - w.before) >= 0.005);
   return `<h2 class="sheet-title" id="sheet-title">${esc(c.name || c.offense || "")} <span class="plabel">${esc(c.label)}</span></h2>
     <p class="label num">${esc(c.away)} ${c.awayScore} – ${esc(c.home)} ${c.homeScore} · ${c.period > 4 ? "OT" : "Q" + c.period} ${esc(c.clock)}${c.situation ? ` · ${esc(c.situation)}` : ""}</p>
     <p class="sheet-play">${esc(c.text)}</p>
+    ${/^[A-Z][a-z'’.-]+ [A-Z]/.test(c.name ?? "") ? starBtnHTML(c.name, starred.has(c.name)) : ""}
     ${c.impacts.map((i) => `<section class="breakdown ${i.owner}">
       <h3><span>${esc(i.name)} <small>· ${i.owner === "me" ? "your" : "their"} ${esc(i.pos === "DEF" ? "D/ST" : i.pos)}</small></span><b class="num">${i.delta > 0 ? "+" : ""}${n1(i.delta)}</b></h3>
       <ul>${(i.rows ?? []).map(rowText).join("")}</ul></section>`).join("") || `<p class="sheet-note">No fantasy points moved on this play for your matchup.</p>`}
@@ -107,10 +111,11 @@ export function findResultsHTML(results, q) {
 }
 
 // A player: every play he was in today, newest first (tap one for its details).
-export function playerSheetHTML(entry, cards, cardHTML) {
+export function playerSheetHTML(entry, cards, cardHTML, starred = new Set()) {
   const total = entry.id ? cards.reduce((s, c) => s + (c.impacts.find((i) => i.id === entry.id)?.delta ?? 0), 0) : null;
   return `<h2 class="sheet-title" id="sheet-title">${esc(entry.name)}</h2>
     <p class="label">${esc([entry.owner ? (entry.owner === "me" ? "Your" : "Their") + " " + (entry.pos === "DEF" ? "D/ST" : entry.pos) : null, entry.team].filter(Boolean).join(" · "))}${total != null ? ` · <span class="num">${n1(total)} pts from plays</span>` : ""}</p>
+    ${starBtnHTML(entry.name, starred.has(entry.name))}
     <div class="feed sheet-feed">${cards.length ? cards.slice(0, 40).map((c) => cardHTML(c, false)).join("") : `<p class="empty">No plays for him yet.</p>`}</div>
     <div class="sheet-actions"><button class="chipbtn" type="button" data-close="sheet">Done</button></div>`;
 }
@@ -141,6 +146,7 @@ export function settingsSheetHTML({ ui }) {
         <button class="chipbtn" type="button" data-act="new-account">${acct ? "Sync another account" : "Sync my Sleeper"}</button>
         ${acct ? `<button class="chipbtn" type="button" data-act="demo">Use the demo league</button>` : ""}
       </div>
+      <div class="acct-btns"><button class="chipbtn" type="button" data-sheet="trophies">🏆 Trophies</button><button class="chipbtn" type="button" data-sheet="starred">★ Starred players</button><button class="chipbtn" type="button" data-act="multi">📺 Multi-view</button></div>
     </section>
     <div class="setlist">
       ${SWITCH("toggle-fantasy", ui.fantasyOn, "Fantasy", "Your matchup, the score at the top, and ranking games by your players. Off: just football, ranked by how exciting each game is.")}
@@ -186,4 +192,21 @@ export function onboardHTML({ step = "name", username = "", error = "", busy = "
     ${error ? `<p class="err">${esc(error)}</p>` : ""}
     <button class="chipbtn" type="button" data-act="demo">Just look around (demo league)</button>
   </form>`;
+}
+
+// Trophies: all of them, unlocked ones bright with the day you got them.
+export function trophiesSheetHTML(list, unlocked) {
+  const n = list.filter((t) => unlocked[t.id]).length;
+  return `<h2 class="sheet-title" id="sheet-title">🏆 Trophies</h2>
+    <p class="sheet-note">${n} of ${list.length} unlocked</p>
+    <div class="trophies">${list.map((t) => `<div class="trophy${unlocked[t.id] ? " got" : ""}"><span class="t-icon" aria-hidden="true">${t.icon}</span><b>${esc(t.name)}</b><small>${unlocked[t.id] ? `Unlocked ${new Date(unlocked[t.id]).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : esc(t.how)}</small></div>`).join("")}</div>
+    <div class="sheet-actions"><button class="chipbtn" type="button" data-close="sheet">Done</button></div>`;
+}
+
+// Your starred players: each with his plays so far and his latest one.
+export function starredSheetHTML(names, cardsFor, cardHTML) {
+  return `<h2 class="sheet-title" id="sheet-title">★ Starred players</h2>
+    ${names.length ? names.map((n) => { const cs = cardsFor(n); return `<section class="starrow"><p><b>${esc(n)}</b> · <span class="num">${cs.length} play${cs.length === 1 ? "" : "s"}</span> ${starBtnHTML(n, true)}</p>${cs[0] ? `<div class="feed">${cardHTML(cs[0], false)}</div>` : `<p class="sheet-note">No plays yet.</p>`}</section>`; }).join("")
+      : `<p class="sheet-note">Star anyone: open a play or search a player (🔍) and tap ☆ Star. Their plays show up under the ★ Starred chip in Zone, with a banner for their touchdowns.</p>`}
+    <div class="sheet-actions"><button class="chipbtn" type="button" data-close="sheet">Done</button></div>`;
 }

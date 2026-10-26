@@ -151,6 +151,7 @@ export function createMatchupView({ ui }) {
         const p = m && [...m.mine, ...m.theirs].find((x) => x.owner === owner && x.id === id);
         if (!p) return;
         const k = `${owner}:${id}`, e0 = edits.get(k) ?? { add: 0, zero: false };
+        ui.onWhatIf?.();
         if (key === "zero") e0.zero = !e0.zero;
         else e0.add += whatIfMoves(p, m.scoring).find((x) => x.key === key)?.points ?? 0;
         if (!e0.zero && !e0.add) edits.delete(k); else edits.set(k, e0);
