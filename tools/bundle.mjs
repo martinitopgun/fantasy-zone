@@ -24,5 +24,6 @@ const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <style>body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}html,body{height:100%}</style>
 </head><body>${body}</body></html>`;
 writeFileSync(path.join(root, "dist/fantasy-zone.html"), html);
+writeFileSync(path.join(root, "dist/index.html"), html); // the same page, named for a website (GitHub Pages serves index.html)
 rmSync(tmp, { recursive: true, force: true });
 console.log(`wrote dist/fantasy-zone.html (${Math.round(html.length / 1024)} KB)`);

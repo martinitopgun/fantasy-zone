@@ -655,8 +655,30 @@ async function startLive() {
 
 // ---------- Sleeper sign-in (first open, "Sync another account", "Sync more leagues") ----------
 // Straight to Sleeper from the browser; through the local server when the app runs with npm start.
-const sleeperFetch = () => makeFetchJson({ rewrite: ui.hasServer ? (u) => u.replace("https://api.sleeper.app", "/proxy/sleeper") : (u) => u });
-const netHelp = (e) => (/fetch|network|load failed/i.test(e.message) ? "Couldn't reach Sleeper from here. Open the app's own link (the one-file version) in a normal browser, then try again." : e.message);
+// On a real website it asks Sleeper directly; if that's refused, it tries two free public relays (Sleeper's
+// data is public, nothing secret goes through them). The claude.ai preview blocks every outside site.
+const RELAYS = [(u) => u, (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`, (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`];
+let relay = 0; // the route that worked last time
+async function loadJson(url) {
+  let err = null;
+  for (let k = 0; k < RELAYS.length; k++) {
+    const i = (relay + k) % RELAYS.length;
+    try {
+      const res = await fetch(RELAYS[i](url), { headers: { accept: "application/json" }, signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`${res.status} from Sleeper`);
+      const text = (await res.text()).trim();
+      relay = i;
+      return text && text !== "null" ? JSON.parse(text) : null;
+    } catch (e) { err = e; }
+  }
+  throw err;
+}
+const sleeperFetch = () => (ui.hasServer ? makeFetchJson({ rewrite: (u) => u.replace("https://api.sleeper.app", "/proxy/sleeper") }) : makeFetchJson({ load: loadJson }));
+const inClaude = /claude\.ai|claudeusercontent/.test(document.referrer) || (() => { try { return window.top !== window.self; } catch { return true; } })();
+const netHelp = (e) => (/fetch|network|load failed|abort|timed? ?out|failed to/i.test(e.message) || e.name === "TypeError"
+  ? (inClaude ? "Claude's preview doesn't let apps reach Sleeper. Open Fantasy Zone's own website (the github.io link) to sync your league. The demo works here." : "Couldn't reach Sleeper. Check your internet and try again.")
+  : e.message);
 
 function showOnboard(state = {}) {
   if (ui.stack.length) return layers.closeAll(() => showOnboard(state));
