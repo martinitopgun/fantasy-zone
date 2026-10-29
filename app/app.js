@@ -108,7 +108,7 @@ function lazyCtx() {
 // Build (or rebuild) the tab bar and pages from the visible tabs (plan B1.1). Pages of hidden tabs are kept,
 // so they come back with their scroll spot.
 function buildTabs() {
-  const tabs = visibleTabs(TABS, { fantasyOn: ui.fantasyOn, data: ui.mode === "replay" ? ui.replayData?.leagues?.[0] : null });
+  const tabs = visibleTabs(TABS, { fantasyOn: ui.fantasyOn, data: ui.mode === "replay" ? ui.replayData?.leagues?.[0] : ui.liveLeagues?.[0] });
   const ids = tabs.map((t) => t.id);
   if (mainPager && ids.join() === ui.tabIds.join()) return;
   const before = ui.tabIds;
@@ -621,28 +621,38 @@ async function startReplay({ at = REPLAY_START } = {}) {
   }, TICK_MS);
 }
 
-async function startLive() {
-  if (ui.stack.length) return layers.closeAll(() => startLive());
+// Live: this week's real matchup (Sleeper) and real games (ESPN), new plays every 10 seconds.
+// One fetcher is kept between starts so switching leagues doesn't download everything again.
+let liveFetch = null;
+function getLiveFetch(fresh) {
+  if (fresh || !liveFetch) liveFetch = ui.hasServer
+    ? makeFetchJson({ rewrite: (u) => u.replace("https://api.sleeper.app", "/proxy/sleeper").replace("https://site.api.espn.com", "/proxy/espn") })
+    : makeFetchJson({ load: loadJson });
+  return liveFetch;
+}
+
+async function startLive({ fresh = false } = {}) {
+  if (ui.stack.length) return layers.closeAll(() => startLive({ fresh }));
   stop();
   ui.mode = "live"; ui.tracker = null; ui.replay = null; ui.error = null; ui.updatedAt = 0; ui.connecting = true;
-  buildTabs();
   appbar.clear(); appbar.renderTransport(); rail.clear();
-  showBoot(`<p class="empty">Connecting to Sleeper and ESPN…</p>`);
+  showBoot(`<div class="intro" role="status"><h1 class="intro-logo">Fantasy <b>Zone</b></h1><p class="intro-tag">Loading your matchup and this week's games…</p><div class="intro-bar" aria-hidden="true"><span></span></div></div>`);
   try {
-    const [{ makeFetchJson }, { createLive }] = await Promise.all([import("./src/net.js"), import("./src/live.js")]);
-    const fetchJson = makeFetchJson({ rewrite: (u) => u.replace("https://api.sleeper.app", "/proxy/sleeper").replace("https://site.api.espn.com", "/proxy/espn") });
-    ui.live = await createLive(fetchJson, { username: ui.username });
-    await ui.live.poll(); // what already happened today, quietly
+    const { createLive } = await import("./src/live.js");
+    ui.live = await createLive(getLiveFetch(fresh), { username: ui.username, leagueIds: ui.account?.chosen ?? null, activeId: ui.account?.active ?? null });
+    await ui.live.poll(); // what already happened this week, quietly
     ui.tracker = ui.live.tracker;
+    ui.liveLeagues = ui.live.leagues;
     newPicks("live");
     ui.updatedAt = Date.now();
   } catch (e) {
     ui.error = e.message; ui.connecting = false;
-    if (/No Sleeper user/.test(e.message)) { ui.username = null; store.set("username", null); }
-    return showSetup();
+    const error = netHelp(e);
+    return showOnboard(ui.account ? { step: "leagues", account: ui.account, chosen: ui.account.chosen, error } : { username: ui.username ?? "", error });
   }
   ui.error = null; ui.connecting = false;
   hideBoot();
+  buildTabs(); // League appears now that its data is here
   resetAll();
   ui.timer = setInterval(async () => {
     try {
@@ -658,9 +668,10 @@ async function startLive() {
 // On a real website it asks Sleeper directly; if that's refused, it tries two free public relays (Sleeper's
 // data is public, nothing secret goes through them). The claude.ai preview blocks every outside site.
 const RELAYS = [(u) => u, (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`, (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`];
-let relay = 0; // the route that worked last time
+const relayFor = new Map(); // site -> the route that worked last time
 async function loadJson(url) {
   let err = null;
+  const host = new URL(url).host, relay = relayFor.get(host) ?? 0;
   for (let k = 0; k < RELAYS.length; k++) {
     const i = (relay + k) % RELAYS.length;
     try {
@@ -668,7 +679,7 @@ async function loadJson(url) {
       if (res.status === 404) return null;
       if (!res.ok) throw new Error(`${res.status} from Sleeper`);
       const text = (await res.text()).trim();
-      relay = i;
+      relayFor.set(host, i);
       return text && text !== "null" ? JSON.parse(text) : null;
     } catch (e) { err = e; }
   }
@@ -700,38 +711,19 @@ function showOnboard(state = {}) {
     e.preventDefault();
     const chosen = [...boot.querySelectorAll('input[name="lg"]:checked')].map((x) => x.value);
     if (!chosen.length) return showOnboard({ ...state, error: "Pick at least one league." });
-    await syncAccount(state.account, chosen, (busy) => showOnboard({ ...state, chosen, busy }), (error) => showOnboard({ ...state, chosen, error }));
+    await syncAccount(state.account, chosen);
   });
 }
 
-async function syncAccount(account, chosen, onBusy, onError) {
-  try {
-    const synced = await syncLeagues(sleeperFetch(), account, chosen, { onStep: onBusy });
-    const base = await loadBase();
-    const playable = replayLeagues(base, synced, null);
-    if (!playable.length) return onError("None of those leagues had a head-to-head matchup in Week 6, so there's nothing to replay yet. Try another league.");
-    ui.account = { ...account, chosen, synced, active: (playable.find((l) => l.league.league_id === account.active) ?? playable[0]).league.league_id };
-    store.set("account", ui.account); store.set("demo", false);
-    ui.username = account.user.username; store.set("username", ui.username);
-    hideBoot();
-    startReplay();
-  } catch (err) { onError(netHelp(err)); }
+async function syncAccount(account, chosen) {
+  ui.account = { user: account.user, leagues: account.leagues, chosen, active: chosen.includes(account.active) ? account.active : chosen[0] };
+  store.set("account", ui.account);
+  ui.username = account.user.username; store.set("username", ui.username);
+  startLive({ fresh: true });
 }
 
-// Live mode needs a Sleeper username first.
-function showSetup() {
-  if (ui.stack.length) return layers.closeAll(() => showSetup());
-  stop();
-  ui.mode = "live"; ui.tracker = null;
-  appbar.clear(); appbar.renderTransport(); rail.clear();
-  showBoot(setupHTML({ error: ui.error, username: ui.username }));
-  $("#setup").addEventListener("submit", (e) => {
-    e.preventDefault();
-    ui.username = $("#username").value.trim();
-    store.set("username", ui.username);
-    startLive();
-  });
-}
+// Live mode needs a Sleeper username first: the sign-in screen.
+function showSetup() { return showOnboard({ username: ui.username ?? "", error: ui.error ?? "" }); }
 
 function jump(at) {
   closeSheet();
@@ -805,7 +797,7 @@ document.addEventListener("click", (e) => {
     case "unpin": ui.pin = null; store.set("pin", null); return renderPin();
     case "speed": return setSpeed(nextSpeed(ui.speed));
     case "open-games": return layers.closeAll(() => selectTab("games", { focus: true })); // "All games ›"
-    case "change-user": return layers.closeAll(() => { ui.error = null; showSetup(); });
+    case "change-user": return layers.closeAll(() => { ui.error = null; showOnboard({}); });
     case "fantasy-on": setFantasy(true); return selectTab("matchup");
     case "story": return openStory();
     case "multi": return layers.closeAll(() => openMulti());
@@ -818,11 +810,10 @@ document.addEventListener("click", (e) => {
     }
     case "goto-matchup": return selectTab("matchup", { focus: true });
     case "toggle-fantasy": setFantasy(!ui.fantasyOn); return refreshSettings();
-    case "demo": store.set("demo", true); ui.account = null; store.set("account", null); return layers.closeAll(() => { hideBoot(); startReplay(); });
     case "new-account": return layers.closeAll(() => showOnboard({}));
     case "more-leagues": return layers.closeAll(() => showOnboard({ step: "leagues", account: ui.account, chosen: ui.account?.chosen }));
-    case "resync": return layers.closeAll(() => { showOnboard({ step: "leagues", account: ui.account, chosen: ui.account.chosen, busy: "Syncing…" }); syncAccount(ui.account, ui.account.chosen, (busy) => showOnboard({ step: "leagues", account: ui.account, chosen: ui.account.chosen, busy }), (error) => showOnboard({ step: "leagues", account: ui.account, chosen: ui.account.chosen, error })); });
-    case "league": { ui.account.active = t.dataset.league; store.set("account", ui.account); const at = ui.replay?.time ?? REPLAY_START; return layers.closeAll(() => startReplay({ at })); }
+    case "resync": return layers.closeAll(() => startLive({ fresh: true }));
+    case "league": ui.account.active = t.dataset.league; store.set("account", ui.account); return layers.closeAll(() => startLive());
     case "toggle-banners": ui.settings.banners = !ui.settings.banners; store.set("banners", ui.settings.banners); if (!ui.settings.banners) banner.hide(); return refreshSettings();
   }
 });
@@ -880,8 +871,7 @@ buildTabs();
 route(startHash, { smooth: false });
 try { history.replaceState({ fz: 1, depth: 0 }, "", `#${ui.tab}`); } catch { /* history unavailable */ }
 
-ui.hasServer = location.protocol.startsWith("http") && !window.__FZ_REPLAY__ && await fetch("/proxy/ping").then((r) => r.ok).catch(() => false);
-await Promise.all([loadBase().catch(() => null), new Promise((r) => setTimeout(r, matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 1400))]); // the intro
-if (!ui.account && !store.get("demo", false)) showOnboard({});
-else if (ui.hasServer && ui.username && !ui.account) startLive();
-else startReplay();
+ui.hasServer = location.protocol.startsWith("http") && !window.__FZ_SITE__ && await fetch("/proxy/ping").then((r) => r.ok).catch(() => false);
+await new Promise((r) => setTimeout(r, matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 1400)); // the intro
+if (ui.account || (ui.hasServer && ui.username)) startLive();
+else showOnboard({});

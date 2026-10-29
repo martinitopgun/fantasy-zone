@@ -49,7 +49,6 @@ export function liveSheetHTML({ ui }) {
     <p>${status}</p>
     <p class="sheet-note">New plays arrive about every 10 seconds from ESPN. Points use your league's own scoring.</p>
     <div class="sheet-actions">
-      <button class="chipbtn" type="button" data-mode="replay">Watch last Sunday's replay</button>
       <button class="chipbtn" type="button" data-act="change-user">Use a different Sleeper user</button>
       <button class="chipbtn" type="button" data-close="sheet">Done</button>
     </div>`;
@@ -140,11 +139,10 @@ export function settingsSheetHTML({ ui }) {
       <p class="label">Your Sleeper</p>
       ${acct ? `<p class="acct-who"><b>${esc(acct.user.display_name)}</b> · ${leagues.length} league${leagues.length === 1 ? "" : "s"} synced</p>
         ${leagues.length > 1 ? `<div class="acct-leagues" role="radiogroup" aria-label="Main league">${leagues.map((l) => `<button class="setrow" type="button" role="radio" aria-checked="${l.league_id === acct.active}" data-act="league" data-league="${esc(l.league_id)}"><span><b>${esc(l.name)}</b><small>${l.league_id === acct.active ? "Showing now" : "Tap to show this league"}</small></span></button>`).join("")}</div>` : ""}`
-      : `<p class="acct-who">Watching the demo league (ontopgun).</p>`}
+      : `<p class="acct-who">Not synced yet.</p>`}
       <div class="acct-btns">
         ${acct ? `<button class="chipbtn" type="button" data-act="resync">Sync again</button><button class="chipbtn" type="button" data-act="more-leagues">Sync more leagues</button>` : ""}
         <button class="chipbtn" type="button" data-act="new-account">${acct ? "Sync another account" : "Sync my Sleeper"}</button>
-        ${acct ? `<button class="chipbtn" type="button" data-act="demo">Use the demo league</button>` : ""}
       </div>
       <div class="acct-btns"><button class="chipbtn" type="button" data-sheet="trophies">🏆 Trophies</button><button class="chipbtn" type="button" data-sheet="starred">★ Starred players</button><button class="chipbtn" type="button" data-act="multi">📺 Multi-view</button></div>
     </section>
@@ -190,7 +188,6 @@ export function onboardHTML({ step = "name", username = "", error = "", busy = "
     <input id="ob-username" autocomplete="username" autocapitalize="none" spellcheck="false" required placeholder="your username" value="${esc(username)}">
     <button class="go" type="submit"${busy ? " disabled" : ""}>${busy ? esc(busy) : "Find my leagues"}</button>
     ${error ? `<p class="err">${esc(error)}</p>` : ""}
-    <button class="chipbtn" type="button" data-act="demo">Just look around (demo league)</button>
   </form>`;
 }
 

@@ -8,8 +8,10 @@ import { createTracker } from "./tracker.js";
 
 const SUMMARY = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=";
 
-export async function createLive(fetchJson, { username }) {
-  const data = await syncEverything(fetchJson, { username });
+export async function createLive(fetchJson, { username, leagueIds = null, activeId = null }) {
+  const data = await syncEverything(fetchJson, { username, leagueIds });
+  if (!data.matchups.length) throw new Error(data.skipped.length ? "None of your leagues has a head-to-head matchup this week." : "No leagues found for this season.");
+  data.matchups.sort((a, b) => (b.league.league_id === activeId) - (a.league.league_id === activeId)); // the one you picked first
   const players = [...data.projections.values()]
     .filter((r) => r.player && r.team && r.player.position !== "DEF")
     .map((r) => ({ id: r.player_id, first: r.player.first_name, last: r.player.last_name, team: r.team, pos: r.player.position }));
@@ -17,6 +19,7 @@ export async function createLive(fetchJson, { username }) {
     league: { league_id: m.league.league_id, name: m.league.name, roster_positions: m.league.roster_positions }, // slots for the lineup
     scoring: m.league.scoring_settings, info: m.info, opponentName: m.opponentName, weight: m.weight,
     mine: m.mine.map(slim), theirs: m.theirs.map(slim),
+    teams: m.teams, pairings: m.pairings, records: m.records, results: [], moves: [], // League tab
   }));
   const tracker = createTracker({
     leagues, players,
@@ -51,7 +54,7 @@ export async function createLive(fetchJson, { username }) {
     return cards.sort((a, b) => (a.wallclock ?? 0) - (b.wallclock ?? 0));
   }
 
-  return { tracker, poll, user: data.user.display_name, week: data.week, skipped: data.skipped };
+  return { tracker, poll, leagues, user: data.user.display_name, week: data.week, skipped: data.skipped };
 }
 
 function slim(p) {

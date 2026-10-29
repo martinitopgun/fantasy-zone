@@ -16,7 +16,7 @@ export function createLeagueView({ ui }) {
   ui.lview ??= "matchups";
   const open = new Set(); // matchups showing their lineups
 
-  const league = () => ui.replayData?.leagues?.[0];
+  const league = () => (ui.mode === "live" ? ui.liveLeagues : ui.replayData?.leagues)?.[0];
   // Whose side a team is on in your matchup: yellow for you, purple for your opponent.
   const tone = (t, oppId) => (t.me ? "me" : t.roster_id === oppId ? "opponent" : "");
 

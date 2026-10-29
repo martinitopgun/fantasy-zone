@@ -3,7 +3,7 @@
 
 import { sleeper, byPlayerId } from "./sleeper.js";
 import { espn } from "./espn.js";
-import { describeLeague } from "./scoring.js";
+import { describeLeague, fantasyPoints } from "./scoring.js";
 import { buildProfiles } from "./profiles.js";
 import { buildMatchupView } from "./model.js";
 
@@ -51,7 +51,24 @@ export async function syncEverything(fetchJson, { username, leagueIds = null, we
     if (!profileCache.has(key)) profileCache.set(key, buildProfiles({ pastWeeks, scoring: league.scoring_settings }));
     const oppOwner = rosters.find((r) => r.roster_id === opponent.roster_id)?.owner_id;
     const oppUser = members.find((u) => u.user_id === oppOwner);
+    // The whole league this week, for the League tab: every team's starters, the pairings and the records so far.
+    const prof = profileCache.get(key), scoring = league.scoring_settings;
+    const starterOf = (id) => {
+      const row = projections.get(id);
+      const pos = row?.player?.position ?? (/^[A-Z]{2,3}$/.test(id) ? "DEF" : "?");
+      const team = row?.team ?? (pos === "DEF" ? id : null);
+      return { id, pos, team, name: pos === "DEF" ? `${id} D/ST` : row?.player ? `${row.player.first_name} ${row.player.last_name}` : `Player ${id}`, projected: fantasyPoints(row?.stats, scoring), profile: prof(id, pos, team) };
+    };
+    const names = new Map(members.map((u) => [u.user_id, u.display_name]));
+    const teams = rosters.map((r) => ({
+      roster_id: r.roster_id, owner: names.get(r.owner_id) ?? `Team ${r.roster_id}`, me: r.roster_id === myRoster.roster_id,
+      starters: (weekMatchups.find((m) => m.roster_id === r.roster_id)?.starters ?? []).filter((id) => id && id !== "0").map(starterOf),
+    }));
+    const groups = new Map();
+    for (const m of weekMatchups) if (m.matchup_id != null) groups.set(m.matchup_id, [...(groups.get(m.matchup_id) ?? []), m.roster_id]);
+    const records = Object.fromEntries(rosters.map((r) => [r.roster_id, { w: r.settings?.wins ?? 0, l: r.settings?.losses ?? 0, t: r.settings?.ties ?? 0, pf: (r.settings?.fpts ?? 0) + (r.settings?.fpts_decimal ?? 0) / 100 }]));
     matchups.push({
+      teams, pairings: [...groups.values()].filter((g) => g.length === 2), records,
       ...buildMatchupView({
         league, scoring: league.scoring_settings, me, opponent, projections, gamesByTeam,
         profile: profileCache.get(key), weight: weights[league.league_id] ?? 1,
