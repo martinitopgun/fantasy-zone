@@ -1,0 +1,6 @@
+# Graphify: map the app's code, not the saved data or the built website
+fixtures/
+app/replay.json
+index.html
+dist/
+graphify-out/
