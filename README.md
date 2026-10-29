@@ -2,8 +2,9 @@
 
 A Real-style live play feed for NFL Sundays, ranked by your fantasy matchup.
 
-- **The top stays put**: your score against your opponent's and your win chance (tap it for Matchup), then
-  pause, speed and the replay clock (tap the clock to jump to a kickoff), Find and settings.
+- **The top stays put**: your score against your opponent's and your win chance (tap it for Matchup; with
+  fantasy off it's the Fantasy Zone logo, which goes to Zone), the live status, Find and the ☰ menu (go to a
+  section, your Sleeper leagues, Trophies, Starred players, Multi-view, settings).
 - **Game chips** under the top bar: slide them sideways to see every live game (yellow dots = your players in
   it, purple = your opponent's; "RZ" = that team is in the red zone). Tap one to open the game. They never
   re-sort by themselves: a ↻ chip appears when the order is out of date, and tapping it re-sorts.
@@ -32,8 +33,9 @@ npm start        # then open http://localhost:3000 (or http://<computer-ip>:3000
 Live mode asks for your Sleeper username once. Every 10 seconds it reads ESPN's scoreboard and the full
 play-by-play of each live game. Fantasy points come from the plays under your league's own scoring rules.
 
-Opened anywhere without the server (or with *Watch last Sunday's replay*), it replays every real play of
-Week 6 at the moment it happened, at 1×–20× speed, with ontopgun's real league.
+The website, https://martinitopgun.github.io/fantasy-zone/, is the same app in one file: `node tools/bundle.mjs`
+builds `index.html` (and `404.html`, the page for a link that doesn't exist). It asks Sleeper and ESPN straight
+from your browser.
 
 ## Accuracy
 

@@ -1,17 +1,14 @@
-// Fantasy Zone app: the shell (app bar, tabs you swipe between, or columns on a wide screen), the two data
-// sources, and the update loop.
-//   live    when served by server.js (npm start): Sleeper + ESPN play-by-play every 10 seconds
-//   replay  anywhere else: every real play of NFL Week 6, at the speed it happened or faster (replay.json)
+// Fantasy Zone app: the shell (app bar, tabs you swipe between, or columns on a wide screen), the live data
+// (your Sleeper matchup this week and ESPN's play-by-play, new plays every 10 seconds), and the update loop.
 // Nothing on screen switches by itself: live data only changes what's inside the pages. Tabs, games,
 // columns and scroll positions change only when you tap or swipe.
 
 import { rankGames, DIALS } from "./src/model.js";
-import { createReplay, windows } from "./src/replay.js";
-import { columnsFor, visibleTabs, nearTabs, nextSpeed, SPEEDS, gameClock } from "./src/view-models.js";
+import { columnsFor, visibleTabs, nearTabs, gameClock } from "./src/view-models.js";
 import { createPager } from "./ui/pager.js";
 import { H, createSheet, createLayers } from "./ui/layers.js";
 import { createAppbar } from "./views/appbar.js";
-import { clockSheetHTML, refreshClockSheet, liveSheetHTML, findSheetHTML, findResultsHTML, playerSheetHTML, playSheetHTML, settingsSheetHTML, setupHTML, pictureSheetHTML, onboardHTML, starredSheetHTML, trophiesSheetHTML } from "./views/sheets.js";
+import { liveSheetHTML, findSheetHTML, findResultsHTML, playerSheetHTML, playSheetHTML, settingsSheetHTML, pictureSheetHTML, onboardHTML, starredSheetHTML, trophiesSheetHTML } from "./views/sheets.js";
 import { createZoneView } from "./views/zone.js";
 import { createMatchupView } from "./views/matchup.js";
 import { createGamesView } from "./views/games.js";
@@ -19,22 +16,20 @@ import { createLeagueView } from "./views/league.js";
 import { createGameLayer } from "./views/game.js";
 import { createRail } from "./ui/rail.js";
 import { buildIndex, search } from "./src/search.js";
-import { cardHTML } from "./views/cards.js";
+import { cardHTML, esc } from "./views/cards.js";
 import { createAlerts, WP_ALERT } from "./src/alerts.js";
 import { createBanner } from "./ui/banner.js";
 import { createStory } from "./views/story.js";
 import { createMulti } from "./views/multi.js";
 import { storyCards } from "./src/story.js";
 import { createPicks } from "./src/picks.js";
-import { findAccount, syncLeagues, replayLeagues } from "./src/connect.js";
+import { findAccount } from "./src/connect.js";
 import { makeFetchJson } from "./src/net.js";
 import { toggleStar, starAlerts, isStarredCard } from "./src/starred.js";
 import { TROPHIES, checkTrophies } from "./src/trophies.js";
 import { sweat } from "./src/insights.js";
 
 const POLL_MS = 10_000;
-const TICK_MS = 250;
-const REPLAY_START = Date.parse("2026-10-18T16:57:00Z"); // just before the 1 PM ET kickoffs
 
 const $ = (sel) => document.querySelector(sel);
 const store = {
@@ -53,9 +48,8 @@ const ui = {
   gamesSeen: new Set(),
   account: store.get("account", null), // your synced Sleeper: { user, leagues, chosen, active, synced }
   badges: { zone: 0, matchup: false }, seenWp: null, // tab badges (plan M4)
-  // replay controls and the Zone filter
+  // the Zone filter
   filter: store.get("filter", "mine"),
-  speed: SPEEDS.includes(store.get("speed", 1)) ? store.get("speed", 1) : 1, paused: false,
   username: store.get("username", null),
   // data
   tracker: null, replay: null, replayData: null, live: null, error: null, updatedAt: 0, connecting: false,
@@ -201,6 +195,7 @@ function onSettle(i, { swipe } = {}) {
   const changed = id !== ui.tab;
   ui.tab = id;
   setHash(id);
+  renderTitle();
   if (swipe && changed) $("#announce").textContent = `${tabOf(id).label} tab`;
   const ctx = ui.tracker ? lazyCtx() : null;
   if (changed && ctx) tabOf(id).view.activate?.(ctx); // e.g. Games re-sorts when you arrive
@@ -303,6 +298,7 @@ function openGame(id) {
     gameLayer.open(id, ctx);
     H.replace(`#game/${id}`);
     rail.markCurrent();
+    renderTitle();
     return true;
   }
   ui.gameOrder = freezeOrder(ctx, id);
@@ -349,11 +345,13 @@ function openStory() {
       saved = [$("#appbar"), $("#pinbar"), $("#rail"), tabbar, main, layerEl, $("#alert")].map((el) => [el, el.inert]);
       for (const [el] of saved) el.inert = true;
       story.open(s);
+      renderTitle();
     },
     hide() {
       story.close();
       for (const [el, was] of saved) el.inert = was;
       if (opener?.isConnected) opener.focus({ preventScroll: true });
+      renderTitle();
     },
   }, "#story");
 }
@@ -366,8 +364,8 @@ function openMulti() {
   let saved = [];
   layers.open({
     kind: "multi",
-    show() { saved = [tabbar, main].map((x) => [x, x.inert]); for (const [x] of saved) x.inert = true; multi.open(ctx); },
-    hide() { multi.close(); for (const [x, was] of saved) x.inert = was; },
+    show() { saved = [tabbar, main].map((x) => [x, x.inert]); for (const [x] of saved) x.inert = true; multi.open(ctx); renderTitle(); },
+    hide() { multi.close(); for (const [x, was] of saved) x.inert = was; renderTitle(); },
   }, "#multi");
 }
 
@@ -381,7 +379,6 @@ function stepGame(dir) {
 function closeGame() { const k = layers.top()?.kind; if ((gameLayer.id && k === "game") || k === "multi") layers.back(); }
 
 function openSheet(kind) {
-  if (kind === "clock" && !ui.replay) return;
   const html = SHEETS[kind]();
   const entry = { kind: "sheet", state: { sheet: kind }, show: () => { sheet.open(kind, html); if (kind === "find") document.getElementById("find-q")?.focus(); }, hide: () => sheet.close() };
   if (layers.top()?.kind === "sheet") layers.swapTop(entry); else layers.open(entry);
@@ -410,14 +407,27 @@ function placeLayer() {
   main.inert = open && !ui.cols;
   if (ui.cols) for (const id of ui.cols) ui.pages[id].inert = open && id === ui.cols.at(-1);
   renderPin();
+  renderTitle();
+}
+
+// The browser tab's name follows what's on screen: "Matchup · Fantasy Zone", "DAL @ GB · Fantasy Zone". The
+// sign-in screen and the columns on a wide screen keep the page's own title.
+const PAGE_TITLE = document.title;
+function renderTitle() {
+  const top = [...ui.stack].reverse().find((x) => x.kind !== "sheet")?.kind;
+  const g = top === "game" && gameLayer.id ? ui.tracker?.snapshot().games.find((x) => x.id === gameLayer.id) : null;
+  const what = !boot.hidden ? (boot.querySelector("#onboard-leagues") ? "Pick your leagues" : "")
+    : top === "story" ? "Story" : top === "multi" ? "Multi-view" : g ? `${g.away} @ ${g.home}`
+    : ui.cols ? "" : tabOf(ui.tab)?.label ?? "";
+  const t = what ? `${what} · Fantasy Zone` : PAGE_TITLE;
+  if (document.title !== t) document.title = t;
 }
 
 // ---------- Update loop (plan B1.10) ----------
 
-// Every replay tick (250 ms) or live poll (10 s).
+// Every live poll (10 s).
 function tick(cards) {
   appbar.renderTransport();
-  if (sheet.kind === "clock" && ui.replay) refreshClockSheet(sheet.body, ui);
   if (!ui.tracker) return;
   const v = ui.tracker.version();
   if (v !== ui.seen) {
@@ -456,7 +466,7 @@ function flush() {
 // Free Picks (plan M7): new questions, locks and grades from each update; Zone shows them.
 function stepPicks(ctx, cards) {
   if (!ui.picks || !ui.fantasyOn) return false;
-  return ui.picks.step({ cards, snap: ctx.snap, now: ui.replay?.time ?? Date.now(), speed: ui.mode === "replay" ? ui.speed : 1 });
+  return ui.picks.step({ cards, snap: ctx.snap, now: ui.replay?.time ?? Date.now(), speed: 1 });
 }
 function newPicks(mode) {
   const key = `picks:${mode}`;
@@ -467,7 +477,18 @@ function newPicks(mode) {
 ui.onWhatIf = () => count("whatif");
 // count("games") etc. from actions; checkTrophiesNow() after each update shows a toast for new ones.
 function count(kind, n = 1) { ui.trophies.counts[kind] = (ui.trophies.counts[kind] ?? 0) + n; store.set("trophies", ui.trophies); checkTrophiesNow(); }
+
+// A short message at the top for a few seconds: kind "ok" (✓ Synced, Back online), "err" (⚠ Connection lost),
+// or a new trophy (a button: tap it for Trophies). It never opens or switches anything by itself.
 let toastTimer = 0;
+function toast(html, kind = "", { opens = null, say = null } = {}) {
+  const el = $("#toast");
+  const text = `${kind === "ok" ? "✓ " : kind === "err" ? "⚠ " : ""}${html}`;
+  el.innerHTML = opens ? `<button type="button" class="toast" data-sheet="${opens}">${text}</button>` : `<p class="toast ${kind}">${text}</p>`;
+  el.hidden = false;
+  $("#announce").textContent = say ?? el.textContent;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; el.innerHTML = ""; }, 4500);
+}
 function checkTrophiesNow(ctx = ui.tracker ? lazyCtx() : null) {
   const m = ctx?.snap.matchups[0];
   if (m && sweat(m).label === "Full sweat") ui.trophies.sweatSeen = true;
@@ -477,11 +498,7 @@ function checkTrophiesNow(ctx = ui.tracker ? lazyCtx() : null) {
   for (const id of fresh) ui.trophies.unlocked[id] = Date.now();
   store.set("trophies", ui.trophies);
   const t = TROPHIES.find((x) => x.id === fresh[0]);
-  const el = $("#toast");
-  el.innerHTML = `<button type="button" class="toast" data-sheet="trophies"><span class="confetti" aria-hidden="true">${"<i></i>".repeat(12)}</span>${t.icon} Trophy unlocked: <b>${t.name}</b>${fresh.length > 1 ? ` +${fresh.length - 1}` : ""}</button>`;
-  el.hidden = false;
-  $("#announce").textContent = `Trophy unlocked: ${t.name}`;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; el.innerHTML = ""; }, 4500);
+  toast(`<span class="confetti" aria-hidden="true">${"<i></i>".repeat(12)}</span>${t.icon} Trophy unlocked: <b>${t.name}</b>${fresh.length > 1 ? ` +${fresh.length - 1}` : ""}`, "", { opens: "trophies", say: `Trophy unlocked: ${t.name}` });
 }
 
 // ---------- Heads-up (plan M4): banners and tab badges ----------
@@ -574,7 +591,7 @@ function resetAll() {
   appbar.renderTransport();
   if (ui.wantGame) {
     const id = ui.wantGame; ui.wantGame = null;
-    if (!openGame(id)) views.zone.note("That game isn't in this replay.");
+    if (!openGame(id)) views.zone.note("That game isn't on this week's schedule.");
   }
 }
 
@@ -584,42 +601,8 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && ui
 
 function stop() { clearInterval(ui.timer); ui.timer = null; }
 
-function showBoot(html) { boot.innerHTML = html; boot.hidden = false; shell.classList.add("booting"); }
-function hideBoot() { boot.hidden = true; boot.innerHTML = ""; shell.classList.remove("booting"); }
-
-// The replay's data: last Sunday's real plays, with your synced leagues (or the demo league).
-async function loadBase() {
-  if (ui.replayBase) return ui.replayBase;
-  ui.replayBase = window.__FZ_REPLAY__ ?? await (await fetch("replay.json")).json(); // the one-file version carries it inline
-  return ui.replayBase;
-}
-function replayDataFor(base) {
-  const a = ui.account;
-  if (!a?.synced?.length) return base;
-  const leagues = replayLeagues(base, a.synced, a.active);
-  return leagues.length ? { ...base, user: a.user.display_name, leagues } : base;
-}
-
-async function startReplay({ at = REPLAY_START } = {}) {
-  if (ui.stack.length) return layers.closeAll(() => startReplay({ at }));
-  stop();
-  ui.mode = "replay"; ui.live = null; ui.error = null;
-  try { ui.replayData = replayDataFor(await loadBase()); }
-  catch (e) { showBoot(`<p class="empty">Couldn't load the replay: ${e.message}</p>`); return; }
-  ui.replay = createReplay(ui.replayData, { startAt: at });
-  ui.tracker = ui.replay.tracker;
-  newPicks("replay");
-  hideBoot();
-  buildTabs(); // League appears now that its data is here
-  resetAll();
-  let last = performance.now();
-  ui.timer = setInterval(() => {
-    const now = performance.now();
-    const dt = now - last;
-    last = now;
-    tick(ui.paused || ui.replay.done ? [] : ui.replay.advance(dt, ui.speed)); // the clock stops at the last saved play
-  }, TICK_MS);
-}
+function showBoot(html) { boot.innerHTML = html; boot.hidden = false; shell.classList.add("booting"); renderTitle(); }
+function hideBoot() { boot.hidden = true; boot.innerHTML = ""; shell.classList.remove("booting"); renderTitle(); }
 
 // Live: this week's real matchup (Sleeper) and real games (ESPN), new plays every 10 seconds.
 // One fetcher is kept between starts so switching leagues doesn't download everything again.
@@ -631,8 +614,9 @@ function getLiveFetch(fresh) {
   return liveFetch;
 }
 
-async function startLive({ fresh = false } = {}) {
-  if (ui.stack.length) return layers.closeAll(() => startLive({ fresh }));
+// ok: what to say once it's running ("Synced 2 leagues"); nothing when the app just opens.
+async function startLive({ fresh = false, ok = "" } = {}) {
+  if (ui.stack.length) return layers.closeAll(() => startLive({ fresh, ok }));
   stop();
   ui.mode = "live"; ui.tracker = null; ui.replay = null; ui.error = null; ui.updatedAt = 0; ui.connecting = true;
   appbar.clear(); appbar.renderTransport(); rail.clear();
@@ -654,12 +638,18 @@ async function startLive({ fresh = false } = {}) {
   hideBoot();
   buildTabs(); // League appears now that its data is here
   resetAll();
+  if (ok) toast(esc(ok), "ok");
+  let fails = 0; // a message after two misses in a row (20 seconds), not for every hiccup
   ui.timer = setInterval(async () => {
     try {
       const cards = await ui.live.poll();
-      ui.error = null; ui.updatedAt = Date.now();
+      if (fails >= 2) toast("Back online", "ok");
+      fails = 0; ui.error = null; ui.updatedAt = Date.now();
       tick(cards);
-    } catch (e) { ui.error = e.message; appbar.renderTransport(); }
+    } catch (e) {
+      if (++fails === 2) toast("Connection lost. Trying again every 10 seconds.", "err");
+      ui.error = e.message; appbar.renderTransport();
+    }
   }, POLL_MS);
 }
 
@@ -688,7 +678,7 @@ async function loadJson(url) {
 const sleeperFetch = () => (ui.hasServer ? makeFetchJson({ rewrite: (u) => u.replace("https://api.sleeper.app", "/proxy/sleeper") }) : makeFetchJson({ load: loadJson }));
 const inClaude = /claude\.ai|claudeusercontent/.test(document.referrer) || (() => { try { return window.top !== window.self; } catch { return true; } })();
 const netHelp = (e) => (/fetch|network|load failed|abort|timed? ?out|failed to/i.test(e.message) || e.name === "TypeError"
-  ? (inClaude ? "Claude's preview doesn't let apps reach Sleeper. Open Fantasy Zone's own website (the github.io link) to sync your league. The demo works here." : "Couldn't reach Sleeper. Check your internet and try again.")
+  ? (inClaude ? "Claude's preview doesn't let apps reach Sleeper. Open Fantasy Zone's own website (the github.io link) to sync your league." : "Couldn't reach Sleeper. Check your internet and try again.")
   : e.message);
 
 function showOnboard(state = {}) {
@@ -719,30 +709,19 @@ async function syncAccount(account, chosen) {
   ui.account = { user: account.user, leagues: account.leagues, chosen, active: chosen.includes(account.active) ? account.active : chosen[0] };
   store.set("account", ui.account);
   ui.username = account.user.username; store.set("username", ui.username);
-  startLive({ fresh: true });
-}
-
-// Live mode needs a Sleeper username first: the sign-in screen.
-function showSetup() { return showOnboard({ username: ui.username ?? "", error: ui.error ?? "" }); }
-
-function jump(at) {
-  closeSheet();
-  ui.replay.jump(at);
-  ui.tracker = ui.replay.tracker;
-  resetAll();
+  startLive({ fresh: true, ok: `Synced ${chosen.length} league${chosen.length === 1 ? "" : "s"}` });
 }
 
 // ---------- Controls ----------
 
 const SHEETS = {
-  clock: () => clockSheetHTML({ ui, wins: windows(ui.replayData, { from: REPLAY_START - 6 * 3600_000 }) }),
   live: () => liveSheetHTML({ ui }),
   find: () => findSheetHTML(),
   play: () => playSheetHTML(ui.tracker?.feed().find((c) => c.id === ui.playId), new Set(ui.starred)),
   player: () => (ui.findPick ? playerSheetHTML(ui.findPick, playerCards(ui.findPick), cardHTML, new Set(ui.starred)) : ""),
   trophies: () => trophiesSheetHTML(TROPHIES, ui.trophies.unlocked),
   starred: () => starredSheetHTML(ui.starred, (n) => (ui.tracker?.feed() ?? []).filter((c) => c.kind !== "marker" && isStarredCard(c, new Set([n]))), cardHTML),
-  settings: () => settingsSheetHTML({ ui }),
+  settings: () => settingsSheetHTML({ ui, tabs: ui.tracker ? ui.tabIds.map((id) => ({ id, label: tabOf(id).label })) : [] }),
   picture: () => pictureSheetHTML(ui.picture),
 };
 
@@ -764,17 +743,20 @@ function setFantasy(on) {
 function refreshSettings() {
   if (sheet.kind !== "settings") return;
   const focus = document.activeElement?.dataset?.act;
-  sheet.body.querySelector(".setlist").outerHTML = new DOMParser().parseFromString(settingsSheetHTML({ ui }), "text/html").querySelector(".setlist").outerHTML;
+  const fresh = new DOMParser().parseFromString(SHEETS.settings(), "text/html");
+  for (const sel of [".menu-go", ".setlist"]) {
+    const now = sheet.body.querySelector(sel), next = fresh.querySelector(sel);
+    if (now && next) now.outerHTML = next.outerHTML;
+  }
   if (focus) sheet.body.querySelector(`[data-act="${focus}"]`)?.focus();
 }
 
-function setSpeed(s) { ui.speed = s; ui.paused = false; store.set("speed", s); tick([]); }
-
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-find],[data-play],[data-game],[data-sheet],[data-act],[data-speed],[data-jump],[data-mode],[data-pick],[data-close],[data-step],#scorebug");
+  const t = e.target.closest("[data-find],[data-play],[data-game],[data-sheet],[data-act],[data-pick],[data-close],[data-step],#scorebug");
   if (!t) return;
-  if (t.id === "scorebug") { // your matchup, one tap from anywhere: whatever is open closes first, in one Back step
-    return layers.closeAll(() => { if (ui.tabIds.includes("matchup")) selectTab("matchup", { focus: true }); });
+  if (t.id === "scorebug") { // the score: your matchup, one tap from anywhere; the logo: Zone. Whatever is open closes first, in one Back step
+    const to = t.querySelector(".brand") || !ui.tabIds.includes("matchup") ? "zone" : "matchup";
+    return layers.closeAll(() => { if (boot.hidden) selectTab(to, { focus: true }); });
   }
   if (t.dataset.close === "layer") return closeGame();
   if (t.dataset.step) return stepGame(Number(t.dataset.step));
@@ -782,20 +764,11 @@ document.addEventListener("click", (e) => {
   if (t.dataset.play) return openPlay(t.dataset.play); // a dot on the win chart
   if (t.matches("article.play") && !ui.cols) return openPlay(t.dataset.id); // phones: the play's details first
   if (t.dataset.game) return openGame(t.dataset.game); // a game chip, a tile, a play card on a wide screen
-  if (t.dataset.sheet) {
-    if (t.dataset.sheet === "clock" && !ui.replay) return;
-    return openSheet(t.dataset.sheet);
-  }
-  if (t.dataset.speed) return setSpeed(Number(t.dataset.speed));
-  if (t.dataset.jump) return jump(Number(t.dataset.jump));
+  if (t.dataset.sheet) return openSheet(t.dataset.sheet);
   if (t.dataset.pick) { ui.pick = t.dataset.pick; store.set("pick", ui.pick); layoutColumns(); return selectTab(ui.pick); }
-  if (t.dataset.mode === "replay") return layers.closeAll(() => startReplay());
-  if (t.dataset.mode === "live") return layers.closeAll(() => (ui.username ? startLive() : showSetup()));
   switch (t.dataset.act) {
-    case "pause": ui.paused = !ui.paused; return tick([]);
     case "pin": ui.pin = ui.pin === gameLayer.id ? null : gameLayer.id; store.set("pin", ui.pin); gameLayer.update(lazyCtx(), []); return renderPin();
     case "unpin": ui.pin = null; store.set("pin", null); return renderPin();
-    case "speed": return setSpeed(nextSpeed(ui.speed));
     case "open-games": return layers.closeAll(() => selectTab("games", { focus: true })); // "All games ›"
     case "change-user": return layers.closeAll(() => { ui.error = null; showOnboard({}); });
     case "fantasy-on": setFantasy(true); return selectTab("matchup");
@@ -809,11 +782,16 @@ document.addEventListener("click", (e) => {
       return;
     }
     case "goto-matchup": return selectTab("matchup", { focus: true });
+    case "go": return layers.closeAll(() => selectTab(t.dataset.tab, { focus: true })); // the menu's sections
     case "toggle-fantasy": setFantasy(!ui.fantasyOn); return refreshSettings();
     case "new-account": return layers.closeAll(() => showOnboard({}));
     case "more-leagues": return layers.closeAll(() => showOnboard({ step: "leagues", account: ui.account, chosen: ui.account?.chosen }));
-    case "resync": return layers.closeAll(() => startLive({ fresh: true }));
-    case "league": ui.account.active = t.dataset.league; store.set("account", ui.account); return layers.closeAll(() => startLive());
+    case "resync": return layers.closeAll(() => startLive({ fresh: true, ok: "Synced again: everything is up to date" }));
+    case "league": {
+      ui.account.active = t.dataset.league; store.set("account", ui.account);
+      const name = ui.account.leagues.find((l) => l.league_id === t.dataset.league)?.name;
+      return layers.closeAll(() => startLive({ ok: name ? `Now showing ${name}` : "" }));
+    }
     case "toggle-banners": ui.settings.banners = !ui.settings.banners; store.set("banners", ui.settings.banners); if (!ui.settings.banners) banner.hide(); return refreshSettings();
   }
 });
@@ -842,7 +820,7 @@ function route(hash, { smooth = true } = {}) {
   const h = String(hash ?? "").replace(/^#/, "");
   const game = /^game\/([^/]+)/.exec(h);
   if (game) {
-    if (ui.tracker) { if (!openGame(game[1])) views.zone.note("That game isn't in this replay."); }
+    if (ui.tracker) { if (!openGame(game[1])) views.zone.note("That game isn't on this week's schedule."); }
     else ui.wantGame = game[1];
     return;
   }

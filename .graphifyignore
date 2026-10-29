@@ -4,3 +4,5 @@ app/replay.json
 index.html
 dist/
 graphify-out/
+404.html
+*.png

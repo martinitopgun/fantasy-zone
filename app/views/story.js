@@ -69,16 +69,21 @@ export function createStory({ el, onClose, onPicture, onShare = () => {} }) {
     onShare();
     const url = drawCard(s, k);
     const name = `fantasy-zone-${s.cards[k].kind}.png`;
-    let ok = false;
+    let ok = false, said = "";
     try {
       const blob = await (await fetch(url)).blob();
       const file = new File([blob], name, { type: "image/png" });
-      if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: s.title }); ok = true; }
+      if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: s.title }); ok = true; said = "✓ Shared"; }
     } catch { /* not allowed here, or cancelled */ }
     if (!ok && !framed) {
-      try { const a = document.createElement("a"); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); ok = true; } catch { /* blocked */ }
+      try { const a = document.createElement("a"); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); ok = true; said = "✓ Downloaded"; } catch { /* blocked */ }
     }
-    if (!ok || framed) onPicture(url);
+    if (!ok || framed) return onPicture(url);
+    // It worked: say so on the button for a moment.
+    const b = el.querySelector('[data-story="share"]');
+    if (!b) return;
+    b.textContent = said;
+    setTimeout(() => { if (b.isConnected) b.textContent = "Share picture"; }, 2500);
   }
 
   return {

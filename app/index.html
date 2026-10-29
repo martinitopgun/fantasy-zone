@@ -1,6 +1,20 @@
-<title>Fantasy Zone</title>
+<title>Fantasy Zone · Your fantasy matchup, play by play</title>
+<meta name="description" content="Follow your Sleeper fantasy football matchup live, play by play: every NFL play, the points it gives your players and your win chance. Free.">
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="theme-color" content="#0e1411">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e1411'/%3E%3Cg transform='rotate(-35 32 32)'%3E%3Cpath d='M5 32C14 14 50 14 59 32C50 50 14 50 5 32Z' fill='%23f2c230'/%3E%3Cpath d='M21 32h22M25 28v8M29.7 28v8M34.3 28v8M39 28v8' fill='none' stroke='%230e1411' stroke-width='3' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="canonical" href="https://martinitopgun.github.io/fantasy-zone/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Fantasy Zone">
+<meta property="og:title" content="Fantasy Zone">
+<meta property="og:description" content="Your Sleeper fantasy football matchup, live and play by play. Free.">
+<meta property="og:url" content="https://martinitopgun.github.io/fantasy-zone/">
+<meta property="og:image" content="https://martinitopgun.github.io/fantasy-zone/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Fantasy Zone: your fantasy matchup, play by play">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
@@ -80,13 +94,13 @@ button:active { opacity: .75; }
 .appbar .score .sbwp { display: inline-flex; align-items: baseline; gap: 4px; font: 700 16px/1 var(--display); }
 .appbar .score .sbwp .sbw { display: none; }
 @media (max-width: 399px) { .appbar .score .sb .sbw { display: none; } .appbar .score { gap: 6px; } .appbar .score .sbn { font-size: 19px; } .appbar .score .sbwp { font-size: 15px; } }
-@media (max-width: 430px) { .tbtn, .iconbtn { min-width: 34px; padding: 0 3px; } .iconbtn.more { min-width: 26px; } .clockpill { min-width: 0; margin: 0; padding: 0 7px; } .appbar .score { padding-right: 4px; } }
+@media (max-width: 430px) { .tbtn, .iconbtn { min-width: 34px; padding: 0 3px; } .iconbtn.more { min-width: 36px; } .clockpill { min-width: 0; margin: 0; padding: 0 7px; } .appbar .score { padding-right: 4px; } }
 @media (max-width: 399px) { .clockpill > svg:last-child { display: none; } }
 @media (max-width: 379px) { .appbar .score .sbwp { display: none; } } /* the yellow/purple bar under the top still shows who's winning */
 @media (max-width: 349px) { .appbar .score .sbn { font-size: 18px; } .appbar .score .sbwp { font-size: 14px; } .appbar .score { gap: 6px; } }
 .transport { display: flex; align-items: center; gap: 2px; flex: none; }
 .tbtn, .iconbtn { flex: none; height: 44px; min-width: 40px; display: inline-grid; place-items: center; padding: 0 6px; background: none; border: 0; border-radius: 8px; font: 700 16px/1 var(--display); letter-spacing: 0.02em; }
-.iconbtn.more { min-width: 36px; font-size: 22px; }
+.iconbtn.more { min-width: 40px; }
 @media (hover: hover) { .tbtn:hover, .iconbtn:hover { background: var(--panel); } }
 .clockpill { flex: none; height: 32px; min-width: 56px; margin: 0 2px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; font: 700 15px/1 var(--display); letter-spacing: 0.02em; position: relative; }
 .clockpill::after, .livepill::after { content: ""; position: absolute; inset: -6px 0; } /* 44px tap target */
@@ -156,6 +170,7 @@ button:active { opacity: .75; }
 .sentinel { height: 1px; }
 .boot { position: absolute; inset: 0; z-index: 4; overflow-y: auto; background: var(--turf); padding: 0 var(--gut-r) 32px var(--gut-l); }
 .shell.booting .tabbar { visibility: hidden; }
+.shell.booting .appbar [data-sheet="find"] { display: none; } /* nothing to search until your league is synced */
 
 /* Wide screens: the tabs become side-by-side columns (the class is set from matchMedia in app.js). */
 .shell.dash .tabbar, .shell.dash .pinbar { display: none; }
@@ -333,8 +348,10 @@ table.box .tl { text-align: left; } table.box td.me { color: var(--you); font-we
 .banner.star { border-left-color: var(--chalk); }
 .starrow { padding: 8px 0; border-bottom: 1px solid var(--line); } .starrow p { margin: 0 0 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 /* Trophies */
-.toastbox { grid-row: main-start / main-end; grid-column: 1; align-self: start; justify-self: center; margin-top: 8px; position: relative; z-index: 11; }
-.toast { position: relative; overflow: visible; padding: 12px 16px; border-radius: 999px; border: 1px solid var(--you); background: var(--panel); color: var(--chalk); font: 600 15px/1.2 var(--display); box-shadow: 0 8px 24px rgb(0 0 0 / .3); animation: bannerIn .25s ease-out; }
+.toastbox { grid-row: main-start / main-end; grid-column: 1; align-self: start; justify-self: center; margin-top: 8px; position: relative; z-index: 14; }
+.toast { position: relative; overflow: visible; max-width: calc(100vw - 32px); margin: 0; padding: 12px 16px; border-radius: 999px; border: 1px solid var(--you); text-align: center; background: var(--panel); color: var(--chalk); font: 600 15px/1.2 var(--display); box-shadow: 0 8px 24px rgb(0 0 0 / .3); animation: bannerIn .25s ease-out; }
+.toast.ok { border-color: var(--up); } .toast.err { border-color: var(--down); } /* "Synced", "Back online" / "Connection lost" */
+.toastbox { pointer-events: none; } .toastbox button { pointer-events: auto; } /* a message never blocks a tap; a trophy can be tapped */
 .confetti { position: absolute; inset: 0; pointer-events: none; }
 .confetti i { position: absolute; left: 50%; top: 50%; width: 6px; height: 10px; border-radius: 2px; background: var(--you); animation: confetti 1s ease-out forwards; }
 .confetti i:nth-child(odd) { background: var(--opp); } .confetti i:nth-child(3n) { background: var(--up); }
@@ -376,6 +393,12 @@ table.box .tl { text-align: left; } table.box td.me { color: var(--you); font-we
 .mv-add { flex: 0 0 min(46%, 220px); min-height: 80px; border: 1px dashed var(--line); border-radius: 12px; background: none; color: var(--mute); font: 700 15px/1 var(--display); text-transform: uppercase; }
 .mv-list { display: flex; flex-wrap: wrap; gap: 6px; }
 @media (min-width: 900px) { .mv-body { grid-template-columns: 2fr 1fr; align-items: start; } .mv-row { flex-direction: column; overflow: visible; } .mv-small, .mv-add { flex: none; } .mv-list { grid-column: 1 / -1; } }
+/* Menu (☰): go to a section, your Sleeper, extras, switches, and the footer */
+.menu-go { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; }
+.menu-go button { min-height: 44px; padding: 0 4px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; font: 700 14px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--chalk); }
+.menu-go button[aria-current="page"] { border-color: var(--you); color: var(--you); }
+.foot { margin: 0; font-size: 12px; line-height: 1.5; color: var(--mute); text-align: center; }
+.boot .foot { max-width: 420px; margin: -14px auto 0; }
 /* Settings switches */
 .setlist { display: grid; gap: 8px; margin: 8px 0 14px; }
 .setrow { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; text-align: left; color: var(--chalk); }
@@ -556,8 +579,8 @@ table.box .tl { text-align: left; } table.box td.me { color: var(--you); font-we
 .stake .left { font-size: 12px; color: var(--mute); text-align: right; line-height: 1.2; }
 
 /* ---- Sheets (bottom sheet on phones, a centered dialog on wide screens) ---- */
-.backdrop { position: absolute; inset: 0; z-index: 10; background: rgb(0 0 0 / .5); }
-.sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 11; max-height: 85%; overflow-y: auto; overscroll-behavior-y: contain;
+.backdrop { position: absolute; inset: 0; z-index: 12; background: rgb(0 0 0 / .5); }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 13; max-height: 85%; overflow-y: auto; overscroll-behavior-y: contain;
   display: grid; gap: 12px; padding: 0 var(--gut-r) 20px var(--gut-l); background: var(--panel); border-top: 1px solid var(--line); border-radius: 16px 16px 0 0; box-shadow: 0 -10px 30px rgb(0 0 0 / .3); }
 .sheet > * { margin: 0; }
 .sheet .handle { display: grid; place-items: center; height: 22px; margin-bottom: -6px; touch-action: none; cursor: grab; }
@@ -588,7 +611,7 @@ table.box .tl { text-align: left; } table.box td.me { color: var(--you); font-we
 .setup { max-width: 420px; margin: 32px auto; padding: 20px; display: grid; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 .setup h1 { font: 700 30px/1 var(--display); text-transform: uppercase; margin: 0; text-wrap: balance; }
 .setup p { margin: 0; color: var(--mute); }
-.setup input { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--chalk); }
+.setup input { font: 400 16px/1.2 var(--body); padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--chalk); }
 .go { background: var(--you); color: var(--you-ink); border: 0; border-radius: 8px; padding: 11px; font: 700 16px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; }
 .setup .err { color: var(--down); font-size: 13px; }
 
@@ -600,7 +623,7 @@ table.box .tl { text-align: left; } table.box td.me { color: var(--you); font-we
     <button class="score" id="scorebug" type="button" aria-label="Fantasy Zone"></button>
     <div class="transport" id="transport"></div>
     <button class="iconbtn" type="button" data-sheet="find" aria-label="Find a player or game" aria-haspopup="dialog"><svg viewBox="0 0 20 20" width="19" height="19" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.8" fill="none" stroke="currentColor" stroke-width="2"/><path d="m13 13 4.6 4.6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
-    <button class="iconbtn more" type="button" data-sheet="settings" aria-label="Settings" aria-haspopup="dialog">⋮</button>
+    <button class="iconbtn more" type="button" data-sheet="settings" aria-label="Menu" aria-haspopup="dialog"><svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
     <div class="winbar off" aria-hidden="true"><span></span></div>
   </header>
   <div class="pinbar" id="pinbar" hidden></div>

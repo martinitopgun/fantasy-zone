@@ -1,0 +1,45 @@
+<title>Page not found · Fantasy Zone</title>
+<meta name="description" content="This page isn't part of Fantasy Zone. The app is one tap away.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0e1411">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e1411'/%3E%3Cg transform='rotate(-35 32 32)'%3E%3Cpath d='M5 32C14 14 50 14 59 32C50 50 14 50 5 32Z' fill='%23f2c230'/%3E%3Cpath d='M21 32h22M25 28v8M29.7 28v8M34.3 28v8M39 28v8' fill='none' stroke='%230e1411' stroke-width='3' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="/fantasy-zone/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=Barlow:wght@400;500&display=swap">
+<style>
+/* The page GitHub Pages shows for an address that isn't part of the site (any folder deep, so every link here is
+   absolute). Same colors as the app. It never moves you anywhere by itself: one button back to the app. */
+:root {
+  --turf: #0e1411; --panel: #161f1a; --line: #2a372f; --chalk: #e8eee9; --mute: #8d9c92; --you: #f2c230; --you-ink: #1a1400;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) { :root {
+  --turf: #f2f5f1; --panel: #ffffff; --line: #d9e1da; --chalk: #111a14; --mute: #56665b; --you: #a87b00; --you-ink: #fffbea; color-scheme: light; } }
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--turf); }
+body { margin: 0; min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 24px max(16px, env(safe-area-inset-right, 0px)) 24px max(16px, env(safe-area-inset-left, 0px));
+  background: var(--turf); color: var(--chalk); font: 16px/1.45 var(--body); -webkit-text-size-adjust: 100%; }
+main { width: 100%; max-width: 420px; display: grid; gap: 14px; justify-items: center; text-align: center; }
+a { color: inherit; -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid var(--you); outline-offset: 3px; }
+.logo { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; text-decoration: none; font: 800 30px/1 var(--display); letter-spacing: 0.02em; text-transform: uppercase; }
+.logo b { color: var(--you); }
+.code { margin: 10px 0 0; font: 800 104px/0.9 var(--display); color: var(--you); }
+h1 { margin: 0; font: 700 30px/1.05 var(--display); letter-spacing: 0.03em; text-transform: uppercase; text-wrap: balance; }
+p { margin: 0; color: var(--mute); }
+.go { display: inline-block; margin-top: 6px; padding: 14px 22px; border-radius: 8px; background: var(--you); color: var(--you-ink); text-decoration: none; font: 700 17px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; }
+.go:active, .logo:active { opacity: .75; }
+.foot { margin-top: 22px; font-size: 12px; line-height: 1.5; }
+</style>
+<main>
+  <a class="logo" href="/fantasy-zone/" aria-label="Fantasy Zone home"><svg viewBox="0 0 64 64" width="38" height="38" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#0e1411"/><g transform="rotate(-35 32 32)"><path d="M5 32C14 14 50 14 59 32C50 50 14 50 5 32Z" fill="#f2c230"/><path d="M21 32h22M25 28v8M29.7 28v8M34.3 28v8M39 28v8" fill="none" stroke="#0e1411" stroke-width="3" stroke-linecap="round"/></g></svg><span>Fantasy <b>Zone</b></span></a>
+  <p class="code" aria-hidden="true">404</p>
+  <h1>Fumble! This page isn't here.</h1>
+  <p>The link might be old or have a typo. Your matchup is on the home page.</p>
+  <a class="go" href="/fantasy-zone/">Back to Fantasy Zone</a>
+  <p class="foot">© <span data-year>2026</span> Fantasy Zone · Free<br>Not affiliated with the NFL, Sleeper or ESPN.</p>
+</main>
+<script>for (const el of document.querySelectorAll("[data-year]")) el.textContent = new Date().getFullYear();</script>

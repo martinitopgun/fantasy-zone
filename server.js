@@ -6,16 +6,12 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { page } from "./tools/page.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 3000);
 const UPSTREAM = { sleeper: "https://api.sleeper.app", espn: "https://site.api.espn.com" };
 const TYPES = { ".js": "text/javascript", ".json": "application/json", ".html": "text/html; charset=utf-8" };
-
-const page = (body) => `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
-</head><body>${body}</body></html>`;
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");

@@ -4,8 +4,11 @@ Live fantasy football companion (like the Real app + fantasy). Sign in with a Sl
 this week's real matchup (Sleeper) and real games (ESPN) and shows plays as they happen. Live only: no replay or
 demo in the app.
 
-- Website: https://martinitopgun.github.io/fantasy-zone/ (GitHub Pages serves `index.html` from the top folder).
-- Source: `app/` (UI), `src/` (engine), `test/` (node tests), `tools/bundle.mjs` (builds `index.html`).
+- Website: https://martinitopgun.github.io/fantasy-zone/ (GitHub Pages serves `index.html` from the top folder,
+  `404.html` for links that don't exist; `apple-touch-icon.png` and `og-image.png` are the home-screen icon and
+  the link-preview picture).
+- Source: `app/` (UI; `app/404.html` is the 404 page), `src/` (engine), `test/` (node tests), `tools/bundle.mjs`
+  (builds `index.html` and `404.html`).
 
 ## After every change (always, without being asked)
 1. `npm test` — all tests must pass.

@@ -1,44 +1,10 @@
-// What goes inside the bottom sheets (clock, live, Find, settings) and the "connect your league" form.
+// What goes inside the bottom sheets (live, Find, the ☰ menu...) and the sign-in screens.
 // Plain HTML strings; app.js opens them with the sheet from ui/layers.js.
 
-import { esc, ET, n1, pct } from "./cards.js";
-import { SPEEDS } from "../src/view-models.js";
-
-// "Sun 1:40:12 PM ET", or "... · end of saved plays" when the replay has run out.
-export function clockLong(replay) {
-  const t = new Date(replay.time).toLocaleString("en-US", { ...ET, weekday: "short", hour: "numeric", minute: "2-digit", second: "2-digit" });
-  return replay.done ? `${t} ET · end of saved plays` : `${t} ET`;
-}
+import { esc, n1, pct } from "./cards.js";
 
 export const REPLAY_NOTE = (user) =>
   `<b>Replay, not live.</b> Every real play from NFL Week 6 arrives at the moment it happened, with ${esc(user)}'s real league.`;
-
-// The replay clock: jump to a kickoff (the windows from src/replay.js), pick a speed, read what this is.
-export function clockSheetHTML({ ui, wins }) {
-  return `<h2 class="sheet-title" id="sheet-title">Replay clock</h2>
-    <p class="sheet-clock num" data-sheet-clock>${esc(clockLong(ui.replay))}</p>
-    <p class="label">Jump to a kickoff</p>
-    <div class="jumps">${wins.map((w) => `<button class="jump" type="button" data-jump="${w.at}"><b>${esc(w.label)}</b><small>${w.games.length} ${w.games.length === 1 ? "game" : "games"}</small></button>`).join("")}</div>
-    <p class="label">Speed</p>
-    <div class="seg" role="group" aria-label="Speed">
-      <button type="button" data-act="pause" aria-pressed="${ui.paused}">Pause</button>
-      ${SPEEDS.map((s) => `<button type="button" data-speed="${s}" aria-pressed="${ui.speed === s}">${s}×</button>`).join("")}
-    </div>
-    <p class="sheet-note">${REPLAY_NOTE(ui.replayData?.user ?? "ontopgun")} Going back to an earlier kickoff replays the day from there.</p>
-    <div class="sheet-actions">
-      ${ui.hasServer ? `<button class="go" type="button" data-mode="live">Back to live</button>` : ""}
-      <button class="chipbtn" type="button" data-close="sheet">Done</button>
-    </div>`;
-}
-
-// Keep an open clock sheet current (every tick): the time and which speed is on.
-export function refreshClockSheet(sheet, ui) {
-  const c = sheet.querySelector("[data-sheet-clock]");
-  const t = clockLong(ui.replay);
-  if (c && c.textContent !== t) c.textContent = t;
-  for (const b of sheet.querySelectorAll("[data-speed]")) b.setAttribute("aria-pressed", String(Number(b.dataset.speed) === ui.speed));
-  sheet.querySelector('[data-act="pause"]')?.setAttribute("aria-pressed", String(ui.paused));
-}
 
 export function liveSheetHTML({ ui }) {
   const ago = ui.updatedAt ? Math.round((Date.now() - ui.updatedAt) / 1000) : null;
@@ -128,13 +94,22 @@ export function pictureSheetHTML(url) {
     <div class="sheet-actions"><button class="chipbtn" type="button" data-close="sheet">Done</button></div>`;
 }
 
-// Settings: switches that are remembered on this device.
+// The footer: under the sign-in screen and at the bottom of the menu.
+export const footerHTML = () => `<footer class="foot">© ${new Date().getFullYear()} Fantasy Zone · Free<br>Leagues from Sleeper, plays from ESPN. Not affiliated with the NFL, Sleeper or ESPN.</footer>`;
+
+// A switch that's remembered on this device.
 const SWITCH = (act, on, title, sub) => `<button class="setrow" type="button" role="switch" aria-checked="${on}" data-act="${act}">
     <span><b>${title}</b><small>${sub}</small></span><i class="switch" aria-hidden="true"></i></button>`;
-export function settingsSheetHTML({ ui }) {
+
+// The ☰ menu: go to a section, your Sleeper, extras, the switches, the footer. tabs: the sections to go to
+// ([] until your league is synced). Things that need this week's games show only once they're here, so no
+// button in it ever does nothing.
+export function settingsSheetHTML({ ui, tabs = [] }) {
   const acct = ui.account;
   const leagues = acct ? acct.leagues.filter((l) => acct.chosen.includes(l.league_id)) : [];
-  return `<h2 class="sheet-title" id="sheet-title">Settings</h2>
+  return `<h2 class="sheet-title" id="sheet-title">Menu</h2>
+    ${tabs.length ? `<p class="label">Go to</p>
+    <nav class="menu-go" aria-label="Go to">${tabs.map((t) => `<button type="button" data-act="go" data-tab="${t.id}"${t.id === ui.tab ? ' aria-current="page"' : ""}>${esc(t.label)}</button>`).join("")}</nav>` : ""}
     <section class="acct">
       <p class="label">Your Sleeper</p>
       ${acct ? `<p class="acct-who"><b>${esc(acct.user.display_name)}</b> · ${leagues.length} league${leagues.length === 1 ? "" : "s"} synced</p>
@@ -144,26 +119,15 @@ export function settingsSheetHTML({ ui }) {
         ${acct ? `<button class="chipbtn" type="button" data-act="resync">Sync again</button><button class="chipbtn" type="button" data-act="more-leagues">Sync more leagues</button>` : ""}
         <button class="chipbtn" type="button" data-act="new-account">${acct ? "Sync another account" : "Sync my Sleeper"}</button>
       </div>
-      <div class="acct-btns"><button class="chipbtn" type="button" data-sheet="trophies">🏆 Trophies</button><button class="chipbtn" type="button" data-sheet="starred">★ Starred players</button><button class="chipbtn" type="button" data-act="multi">📺 Multi-view</button></div>
+      <div class="acct-btns"><button class="chipbtn" type="button" data-sheet="trophies">🏆 Trophies</button><button class="chipbtn" type="button" data-sheet="starred">★ Starred players</button>${ui.tracker ? `<button class="chipbtn" type="button" data-act="multi">📺 Multi-view</button>` : ""}</div>
     </section>
+    <p class="label">Settings</p>
     <div class="setlist">
       ${SWITCH("toggle-fantasy", ui.fantasyOn, "Fantasy", "Your matchup, the score at the top, and ranking games by your players. Off: just football, ranked by how exciting each game is.")}
       ${SWITCH("toggle-banners", ui.settings.banners, "Banners for big moments", "A short banner when something big happens in your matchup. It never switches what you're watching.")}
     </div>
+    ${footerHTML()}
     <div class="sheet-actions"><button class="chipbtn" type="button" data-close="sheet">Done</button></div>`;
-}
-
-// Live mode without a Sleeper user yet (or after a failed connection).
-export function setupHTML({ error, username }) {
-  return `<form class="setup" id="setup">
-    <h1>Connect your Sleeper league</h1>
-    <p>Type your Sleeper username. The app finds your leagues, team, opponent and scoring by itself. No password needed.</p>
-    <label class="label" for="username">Sleeper username</label>
-    <input id="username" autocomplete="username" required placeholder="ontopgun" value="${esc(username ?? "")}">
-    <button class="go" type="submit">Connect</button>
-    <button class="chipbtn" type="button" data-mode="replay">Or watch last Sunday's replay</button>
-    ${error ? `<p class="err">${esc(error)}</p>` : ""}
-  </form>`;
 }
 
 // First open (and "Sync another account"): ask for a Sleeper username, then which leagues to sync.
@@ -178,7 +142,7 @@ export function onboardHTML({ step = "name", username = "", error = "", busy = "
       <button class="go" type="submit"${busy || !account.leagues.length ? " disabled" : ""}>${busy ? esc(busy) : "Sync and start"}</button>
       ${error ? `<p class="err">${esc(error)}</p>` : ""}
       <button class="chipbtn" type="button" data-act="new-account">Different account</button>
-    </form>`;
+    </form>${footerHTML()}`;
   }
   return `<form class="setup onboard" id="onboard-name">
     <p class="label">Welcome to Fantasy Zone</p>
@@ -188,7 +152,7 @@ export function onboardHTML({ step = "name", username = "", error = "", busy = "
     <input id="ob-username" autocomplete="username" autocapitalize="none" spellcheck="false" required placeholder="your username" value="${esc(username)}">
     <button class="go" type="submit"${busy ? " disabled" : ""}>${busy ? esc(busy) : "Find my leagues"}</button>
     ${error ? `<p class="err">${esc(error)}</p>` : ""}
-  </form>`;
+  </form>${footerHTML()}`;
 }
 
 // Trophies: all of them, unlocked ones bright with the day you got them.
